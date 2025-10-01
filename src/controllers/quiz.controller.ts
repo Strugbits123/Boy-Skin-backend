@@ -5,6 +5,7 @@ import type { QuizModel } from "../models/quiz.model";
 import DbService from "../services/db.service";
 import RecommendationService from "../services/recommendation.service";
 import { ObjectId } from "mongodb";
+import QuizResults from "../models/quiz.results.model";
 class QuizController {
     static async addQuiz(req: Request, res: Response) {
         try {
@@ -35,10 +36,7 @@ class QuizController {
                 newsletter_option: body.newsletter_option
 
             };
-            const insertedQuizId = await DbService.insertOneData("quizs", {
-                RecommendedproductIds: [],
-                ...insertingData
-            });
+
             const recommendedProduct = await RecommendationService.getFinalProduct(insertingData);
             if (!recommendedProduct) {
                 return res.status(500).json({
@@ -47,6 +45,10 @@ class QuizController {
                     data: null
                 });
             }
+            const insertedQuizId = await DbService.insertOneData("quizs", {
+                quizResultsDocId: "",
+                ...insertingData
+            });
             const recommendedProducts = recommendedProduct.products;
             const allProducts = await DbService.getCachedNotionProducts();
             const finalProducts = [];
@@ -56,9 +58,18 @@ class QuizController {
                     finalProducts.push(productData);
                 }
             }
-            console.log(`Recommended Products Routine Instructions: ${recommendedProduct.routineInstructions}\n\nRecommended Products Safety Notes: ${recommendedProduct.safetyNotes}\n\nRecommended Products Treatment Approach: ${recommendedProduct.treatmentApproach}\n\nRecommended Products Clinical Reasoning: ${recommendedProduct.clinicalReasoning}\n\nRecommended Products Total Cost: ${recommendedProduct.totalCost}`);
+            const quizResults: QuizResults = {
+                quizId: insertedQuizId,
+                productsId: finalProducts.map((p) => p.productId),
+                routineInstructions: recommendedProduct.routineInstructions,
+                safetyNotes: recommendedProduct.safetyNotes,
+                treatmentApproach: recommendedProduct.treatmentApproach,
+                clinicalReasoning: recommendedProduct.clinicalReasoning,
+                totalCost: recommendedProduct.totalCost
+            }
+            const quizResultsId = await DbService.insertOneData("quiz-results", quizResults);
             await DbService.updateOneData("quizs", {
-                RecommendedproductIds: finalProducts.map((p) => p.productId)
+                quizResultsDocId: quizResultsId
             }, {
                 _id: new ObjectId(insertedQuizId)
             });
@@ -67,12 +78,7 @@ class QuizController {
                 message: "Quiz created successfully",
                 data: {
                     quizId: insertedQuizId,
-                    products: finalProducts,
-                    routineInstructions: recommendedProduct.routineInstructions,
-                    safetyNotes: recommendedProduct.safetyNotes,
-                    treatmentApproach: recommendedProduct.treatmentApproach,
-                    clinicalReasoning: recommendedProduct.clinicalReasoning,
-                    totalCost: recommendedProduct.totalCost
+                    quizResultsId: quizResultsId
                 }
             });
         } catch (error: any) {
@@ -82,6 +88,13 @@ class QuizController {
                 message: message,
                 data: null
             });
+        }
+    }
+    static async getQuizResults(req: Request, res: Response) {
+        try {
+            const quizId = req.params.id;
+        } catch (error) {
+
         }
     }
 }

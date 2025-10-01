@@ -22,7 +22,7 @@ interface RecommendationResponse {
     totalCost: number;
     budgetUtilization: string;
     routineInstructions: string;
-    safetyNotes: string[];
+    safetyNotes: string;
     clinicalReasoning: string;
 }
 

@@ -396,7 +396,7 @@ EXPECTED JSON STRUCTURE (RETURN THIS EXACT FORMAT):
   "totalCost": 0,
   "budgetUtilization": "$X/${aiQuiz.preferences.budget} (Z%)",
   "clinicalReasoning": "Explain: 1) Why primary concern ingredient was chosen (reference docs score), 2) Why all essentials included, 3) How routine addresses patient profile, 4) Why total cost is within budget",
-  "safetyNotes": ["specific precautions based on docs rules"],
+  "safetyNotes": "specific precautions based on docs rules",
   "routineInstructions": "complete AM/PM routine with all products"
 }
 
@@ -473,7 +473,7 @@ DO NOT RESPOND WITH ANYTHING EXCEPT THE FINAL JSON OBJECT.
                 totalCost,
                 budgetUtilization: recommendation.budgetUtilization || `$${totalCost}/${aiQuiz.preferences.budget}`,
                 routineInstructions: recommendation.routineInstructions || 'Follow routine as prescribed',
-                safetyNotes: recommendation.safetyNotes || [],
+                safetyNotes: recommendation.safetyNotes || 'No safety notes',
                 clinicalReasoning: recommendation.clinicalReasoning || 'Routine optimized for patient profile'
             };
 

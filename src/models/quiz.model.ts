@@ -12,7 +12,7 @@ export interface QuizModel {
     additional_info: string;
     terms_accepted: string;
     newsletter_option: string;
-    RecommendedproductIds?: string[]
+    quizResultsDocId?: string
 }
 
 export interface AICompatibleQuizModel {
