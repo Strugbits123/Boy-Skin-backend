@@ -1,0 +1,35 @@
+{
+  "name": "boy-skin",
+  "version": "1.0.0",
+  "main": "app.js",
+  "type": "commonjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "start": "node ./dist/app.js",
+    "dev": "nodemon ./src/app.ts\"",
+    "who-built-this": "echo This project was built by Shahwaiz Afzal 🚀 ^| GitHub: https://github.com/Shahwaiz24"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@notionhq/client": "^5.1.0",
+    "@types/dotenv": "^6.1.1",
+    "@types/express": "^5.0.3",
+    "@types/marked": "^5.0.2",
+    "@types/mongodb": "^4.0.6",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "marked": "^16.3.0",
+    "mongodb": "^6.20.0",
+    "nodemon": "^3.1.10"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/node": "^24.5.2",
+    "ts-node": "^10.9.2"
+  }
+}
