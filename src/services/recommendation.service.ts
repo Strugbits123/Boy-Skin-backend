@@ -31,40 +31,23 @@ class RecommendationService {
         if (this.cachedDocsContent) {
             return this.cachedDocsContent;
         }
-
         try {
-            const docPath = path.join(process.cwd(), 'AI.doc.md');
-            const mdContent = fs.readFileSync(docPath, 'utf-8');
+            const docPath = path.join(process.cwd(), 'Ai.doc.txt');
+            const txtContent = fs.readFileSync(docPath, 'utf-8');
 
-            // Convert markdown to clean readable text (strip MD syntax)
-            // Remove markdown syntax while keeping content readable
-            let cleanContent = mdContent
-                // Remove code block markers
-                .replace(/```[\s\S]*?```/g, (match) => {
-                    return match.replace(/```(\w+)?\n?/g, '').replace(/```/g, '');
-                })
-                // Remove inline code backticks
-                .replace(/`([^`]+)`/g, '$1')
-                // Remove bold/italic markers
-                .replace(/\*\*([^*]+)\*\*/g, '$1')
-                .replace(/\*([^*]+)\*/g, '$1')
-                .replace(/__([^_]+)__/g, '$1')
-                .replace(/_([^_]+)_/g, '$1')
-                // Remove header markers but keep text
-                .replace(/^#{1,6}\s+/gm, '')
-                // Remove horizontal rules
-                .replace(/^[-*_]{3,}$/gm, '')
-                // Remove links but keep text
-                .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-                // Clean up extra whitespace
+
+            let cleanContent = txtContent
+                .replace(/\r\n/g, '\n')
                 .replace(/\n{3,}/g, '\n\n')
+                .replace(/[ \t]+$/gm, '')
+                .replace(/^[ \t]+/gm, '')
                 .trim();
 
             this.cachedDocsContent = cleanContent;
             return cleanContent;
         } catch (error) {
-            console.error('Error reading AI.doc.md:', error);
-            throw new Error('AI documentation file not found. Ensure AI.doc.md exists in project root.');
+            console.error('Error reading Ai.doc.txt:', error);
+            throw new Error('AI documentation file not found. Ensure Ai.doc.txt exists in project root.');
         }
     }
 
