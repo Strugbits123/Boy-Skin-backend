@@ -1,4 +1,7 @@
+import { ObjectId } from "mongodb";
+
 export interface QuizModel {
+    _id?: ObjectId;
     Name: string;
     Email: string;
     Age: string;

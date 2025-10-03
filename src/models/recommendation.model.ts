@@ -21,8 +21,8 @@ interface RecommendationResponse {
     products: ProductRecommendation[];
     totalCost: number;
     budgetUtilization: string;
-    routineInstructions: string;
-    safetyNotes: string;
+    routineInstructions: string[];
+    safetyNotes: string[];
     clinicalReasoning: string;
 }
 

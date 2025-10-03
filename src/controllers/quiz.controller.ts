@@ -93,8 +93,77 @@ class QuizController {
     static async getQuizResults(req: Request, res: Response) {
         try {
             const quizId = req.params.id;
-        } catch (error) {
+            if (!quizId) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Quiz ID is required",
+                    data: null
+                });
+            }
+            const quizResults = await DbService.getOneData("quiz-results", {
+                _id: new ObjectId(quizId.toString())
+            });
+            if (!quizResults) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Quiz results not found",
+                    data: null
+                });
+            }
+            const quizData: QuizResults = quizResults as QuizResults;
+            const allProducts = await DbService.getCachedNotionProducts();
+            const finalProducts = [];
+            for (const product of quizData.productsId) {
+                const productData = allProducts.find((p) => p.productId === product);
+                if (productData) {
+                    finalProducts.push(productData);
+                }
+            }
+            const userQuizData = await DbService.getOneData("quizs", {
+                _id: new ObjectId(quizData.quizId.toString())
+            });
+            if (!userQuizData) {
+                return res.status(404).json({
+                    success: false,
+                    message: "User quiz data not found",
+                    data: null
+                });
+            }
+            const finalUserQuizData: QuizModel = userQuizData as unknown as QuizModel;
 
+            const response = {
+                resultsId: quizData._id?.toString(),
+                userName: finalUserQuizData.Name,
+                userEmail: finalUserQuizData.Email,
+                userAge: finalUserQuizData.Age,
+                userGender: finalUserQuizData.Gender,
+                userCountry: finalUserQuizData.Country,
+                userWakeUpSkinType: finalUserQuizData.wakeUpSkinType,
+                userSkinSensitivity: finalUserQuizData.skinSensitivity,
+                userWorkOn: finalUserQuizData.work_on,
+                userBudget: finalUserQuizData.Budget,
+                userRoutineTime: finalUserQuizData.routine_time,
+                userAdditionalInfo: finalUserQuizData.additional_info,
+                products: finalProducts,
+                routineInstructions: quizData.routineInstructions,
+                safetyNotes: quizData.safetyNotes,
+                treatmentApproach: quizData.treatmentApproach,
+                clinicalReasoning: quizData.clinicalReasoning,
+                totalCost: quizData.totalCost
+            };
+
+            return res.status(200).json({
+                success: true,
+                message: "Quiz results fetched successfully",
+                data: response
+            })
+        } catch (error: any) {
+            const message = error?.message ?? "An Unknown Error Occured"
+            return res.status(500).json({
+                success: false,
+                message: message,
+                data: null
+            });
         }
     }
 }

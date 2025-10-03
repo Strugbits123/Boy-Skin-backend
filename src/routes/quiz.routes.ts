@@ -27,5 +27,7 @@ const rateLimiter = createGlobalConcurrentRateLimiter({
 
 quizRouter.post("/add-quiz", AccessMiddleware.checkAccess, rateLimiter.middleware(), QuizController.addQuiz);
 
+quizRouter.get("/get-quiz-results/:id", AccessMiddleware.checkAccess, QuizController.getQuizResults);
+
 
 export default quizRouter;

@@ -1,3 +1,4 @@
+import { Console } from "console";
 import DatabaseConfig from "../config/db";
 import Product from "../models/product.model";
 
@@ -189,9 +190,10 @@ class DbService {
 
                     return {
                         productId: page.id || "",
-
                         productName: props?.['Product Name']?.title?.[0]?.plain_text || "",
+                        format: props?.["Format"]?.select || {
 
+                        },
                         brand: {
                             id: props?.Brand?.select?.id || "",
                             name: props?.Brand?.select?.name || ""
@@ -221,7 +223,7 @@ class DbService {
 
                         price: props?.Price?.number || null,
 
-                        productType: props?.['Product Type']?.multi_select?.map((item: NotionSelectItem) => ({
+                        function: props?.['Function']?.multi_select?.map((item: NotionSelectItem) => ({
                             id: item.id || "",
                             name: item.name || "",
                             color: item.color || ""
@@ -235,9 +237,9 @@ class DbService {
 
                         link: props?.Link?.url || "",
 
-                        keyIngredients: {
-                            id: props?.['Key ingredients']?.id || "",
-                            plain_text: props?.['Key ingredients']?.rich_text?.[0]?.plain_text || ""
+                        primaryActiveIngredients: {
+                            id: props?.['Primary Active Ingredients']?.id || "",
+                            plain_text: props?.['Primary Active Ingredients']?.rich_text?.[0]?.plain_text || ""
                         },
 
                         requiresSPF: {
@@ -355,6 +357,16 @@ class DbService {
             const message =
                 error?.message ?? "Unknown error occurred while fetching Notion doc.";
             console.error("Error in getRecommendationDoc:", message);
+            throw new Error(message);
+        }
+    }
+    static async getOneData(collectionName: string, query: any) {
+        try {
+            const db = await DatabaseConfig.getDatabase();
+            const result = await db.collection(collectionName).findOne(query);
+            return result;
+        } catch (error: any) {
+            const message = error?.message ?? "Unknown Error occurred in getOneData";
             throw new Error(message);
         }
     }

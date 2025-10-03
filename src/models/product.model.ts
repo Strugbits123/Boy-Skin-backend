@@ -27,12 +27,13 @@ interface Product {
     ingredientList: TextProperty;
     summary: TextProperty;
     skinType: MultiSelectItem[];
+    format: MultiSelectItem;
     skinConcern: MultiSelectItem[];
     price: number | null;
-    productType: MultiSelectItem[];
+    function: MultiSelectItem[];
     cannotMixWith: MultiSelectItem[];
     link: string;
-    keyIngredients: TextProperty;
+    primaryActiveIngredients: TextProperty;
     requiresSPF: SelectProperty;
     step: MultiSelectItem[];
     usageTime: MultiSelectItem[];
