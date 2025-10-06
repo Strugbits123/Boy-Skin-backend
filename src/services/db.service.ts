@@ -190,6 +190,7 @@ class DbService {
 
                     return {
                         productId: page.id || "",
+                        imageUrl: props?.["Image Link"]?.url || "",
                         productName: props?.['Product Name']?.title?.[0]?.plain_text || "",
                         format: props?.["Format"]?.select || {
 

@@ -23,6 +23,7 @@ interface SelectProperty {
 interface Product {
     productId: string;
     productName: string;
+    imageUrl: string;
     brand: Brand;
     ingredientList: TextProperty;
     summary: TextProperty;
