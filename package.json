@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node ./dist/app.js",
     "dev": "nodemon ./src/app.ts\"",
-    "who-built-this": "echo This project was built by Shahwaiz Afzal 🚀 ^| GitHub: https://github.com/Shahwaiz24"
+    "who-built-this": "echo This project was built by Shahwaiz Afzal 🚀 ^| GitHub: https://github.com/Shahwaiz24",
+    "pm2": "npm run build && npm run start"
   },
   "keywords": [],
   "author": "",
