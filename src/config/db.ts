@@ -15,8 +15,7 @@ if (!DB_NAME) {
 }
 
 const options: MongoClientOptions = {
-    tls: true,
-    tlsAllowInvalidCertificates: true,
+    tls: false,
     connectTimeoutMS: 20000,
     socketTimeoutMS: 60000,
     serverSelectionTimeoutMS: 10000,
@@ -37,7 +36,7 @@ class DatabaseConfig {
                 client = new MongoClient(MONGO_URI, options);
                 await client.connect();
                 database = client.db(DB_NAME);
-                logger.info("Database connected successfully: ",database.databaseName);
+                logger.info("Database connected successfully: ", database.databaseName);
                 process.on("SIGINT", DatabaseConfig.closeConnection);
                 process.on("SIGTERM", DatabaseConfig.closeConnection);
                 return database;
