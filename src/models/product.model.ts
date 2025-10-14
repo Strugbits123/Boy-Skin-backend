@@ -26,6 +26,7 @@ interface Product {
     imageUrl: string;
     brand: Brand;
     ingredientList: TextProperty;
+    strengthRatingOfActives: MultiSelectItem[];
     summary: TextProperty;
     skinType: MultiSelectItem[];
     format: MultiSelectItem;

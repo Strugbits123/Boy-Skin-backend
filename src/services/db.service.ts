@@ -72,11 +72,11 @@ class DbService {
             return await this.getNotionProducts();
 
         } catch (error: any) {
-            console.error(`❌ Cache error: ${error.message}`);
+            console.error(`Cache error: ${error.message}`);
 
             // Check if it's a configuration issue
             if (error.message.includes('missing in .env')) {
-                console.error(`🚨 CONFIGURATION ERROR: Please create .env file with Notion credentials`);
+                console.error(`CONFIGURATION ERROR: Please create .env file with Notion credentials`);
                 return []; // Return empty array to prevent crashes
             }
 
@@ -103,7 +103,7 @@ class DbService {
         } catch (error: any) {
             // Reset attempts if max retries reached
             if (this.cache.updateAttempts >= this.cache.maxRetries) {
-                console.error(`🚨 Max cache refresh attempts reached: ${error.message}`);
+                console.error(`Max cache refresh attempts reached: ${error.message}`);
                 this.cache.updateAttempts = 0;
             }
         } finally {
@@ -113,7 +113,7 @@ class DbService {
 
     // Start cron job for automatic cache updates
     static async startCacheUpdateCron(): Promise<void> {
-        console.log(`🕐 Cache system started (30min intervals)`);
+        console.log(`Cache system started (30min intervals)`);
 
         // Initial cache load - synchronous
         try {
@@ -130,7 +130,7 @@ class DbService {
             try {
                 await this.refreshCacheAsync();
             } catch (error: any) {
-                console.error(`❌ Cache cron failed: ${error.message}`);
+                console.error(`Cache cron failed: ${error.message}`);
             }
         }, this.CACHE_DURATION);
     }
@@ -188,6 +188,7 @@ class DbService {
                 try {
                     const props = page.properties;
 
+
                     return {
                         productId: page.id || "",
                         imageUrl: props?.["Image Link"]?.url || "",
@@ -199,12 +200,15 @@ class DbService {
                             id: props?.Brand?.select?.id || "",
                             name: props?.Brand?.select?.name || ""
                         },
-
                         ingredientList: {
                             id: props?.['Ingredient list (all)']?.id || "",
                             plain_text: props?.['Ingredient list (all)']?.rich_text?.[0]?.plain_text || ""
                         },
-
+                        strengthRatingOfActives: props?.['Strength Rating of Actives']?.multi_select?.map((item: NotionSelectItem) => ({
+                            id: item.id || "",
+                            name: item.name || "",
+                            color: item.color || ""
+                        })) || [],
                         summary: {
                             id: props?.Summary?.id || "",
                             plain_text: props?.Summary?.rich_text?.[0]?.plain_text || ""

@@ -10,6 +10,7 @@ export interface QuizModel {
     wakeUpSkinType: string;
     skinSensitivity: string;
     work_on: string;
+    work_on_acne : string;
     Budget: string;
     routine_time: string;
     additional_info: string;

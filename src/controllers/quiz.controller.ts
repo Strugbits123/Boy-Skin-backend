@@ -10,7 +10,7 @@ class QuizController {
     static async addQuiz(req: Request, res: Response) {
         try {
             const body = req.body ?? {};
-            const requiredFields = ["Name", "Email", "Age", "Gender", "Country", "wakeUpSkinType", "skinSensitivity", "work_on", "Budget", "routine_time", "additional_info", "terms_accepted", "newsletter_option"];
+            const requiredFields = ["Name", "Email", "Age", "Gender", "Country", "wakeUpSkinType", "skinSensitivity", "work_on", "work_on_acne", "Budget", "routine_time", "additional_info", "terms_accepted", "newsletter_option"];
             const isValid = ValidationService.validateBody(body, requiredFields);
             if (!isValid) {
                 return res.status(400).json({
@@ -19,7 +19,6 @@ class QuizController {
                     data: null
                 });
             }
-
             const insertingData: QuizModel = {
                 Name: body.Name,
                 Email: body.Email,
@@ -27,6 +26,7 @@ class QuizController {
                 Gender: body.Gender,
                 Country: body.Country,
                 wakeUpSkinType: body.wakeUpSkinType,
+                work_on_acne: body.work_on_acne,
                 skinSensitivity: body.skinSensitivity,
                 work_on: body.work_on,
                 Budget: body.Budget,
@@ -34,9 +34,7 @@ class QuizController {
                 additional_info: body.additional_info,
                 terms_accepted: body.terms_accepted,
                 newsletter_option: body.newsletter_option
-
             };
-
             const recommendedProduct = await RecommendationService.getFinalProduct(insertingData);
             if (!recommendedProduct) {
                 return res.status(500).json({
