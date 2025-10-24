@@ -204,10 +204,21 @@ class ValidationService {
             return `$${budgetNum}`;
         };
 
-        // Enhanced acne status detection
-        const checkAcneStatus = (workOn: string): "active acne" | "not active acne" => {
-            const normalized = workOn.toLowerCase();
+        // Enhanced acne status detection with work_on_acne field support
+        const checkAcneStatus = (workOn: string, workOnAcne: string): "active acne" | "not active acne" => {
+            // First check work_on_acne field for specific values
+            if (workOnAcne) {
+                const normalizedAcne = workOnAcne.toLowerCase().trim();
+                if (normalizedAcne === "active acne" || normalizedAcne === "acne-prone") {
+                    return "active acne";
+                }
+                if (normalizedAcne === "n/a") {
+                    return "not active acne";
+                }
+            }
 
+            // Fallback to work_on field for general acne detection
+            const normalized = workOn.toLowerCase();
             const acneKeywords = ["acne", "pimples", "breakouts", "zits", "spots", "blemishes"];
             return acneKeywords.some(keyword => normalized.includes(keyword)) ? "active acne" : "not active acne";
         };
@@ -283,7 +294,7 @@ class ValidationService {
             skinAssessment: {
                 skinType: mapSkinType(quiz.wakeUpSkinType || "normal"),
                 skinSensitivity: mapSensitivity(quiz.skinSensitivity || "not sensitive"),
-                currentAcneStatus: checkAcneStatus(quiz.work_on || "")
+                currentAcneStatus: checkAcneStatus(quiz.work_on || "", quiz.work_on_acne || "")
             },
             concerns: {
                 primary: concerns.primary,

@@ -154,7 +154,7 @@ class QuizController {
                 success: true,
                 message: "Quiz results fetched successfully",
                 data: response
-            })
+            });
         } catch (error: any) {
             const message = error?.message ?? "An Unknown Error Occured"
             return res.status(500).json({

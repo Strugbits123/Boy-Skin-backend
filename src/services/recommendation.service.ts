@@ -226,8 +226,6 @@ class RecommendationService {
         console.log(`Queue processing completed`);
     }
 
-    // MAIN RECOMMENDATION ENGINE - Simplified, AI-Driven
-    // MAIN RECOMMENDATION ENGINE - Docs-Strict AI Implementation
     static async getRecommendedProduct(quiz: QuizModel): Promise<RecommendationResponse> {
         try {
             // Step 1: Transform quiz to AI-compatible format
@@ -248,157 +246,59 @@ class RecommendationService {
             const primaryConcern = allConcerns[0] || 'general';
             const secondaryConcerns = allConcerns.slice(1);
 
-            // Step 4: Enhanced AI prompt with STRICT enforcement including BUDGET ENFORCEMENT
+            // Step 4: ENFORCED DOCUMENTATION APPROACH - AI must read docs first
             const aiPrompt = `
 ${aiDocumentation}
 
-CRITICAL INSTRUCTIONS - READ TWICE BEFORE RESPONDING:
+CRITICAL ENFORCEMENT - READ DOCUMENTATION FIRST:
 
-1. The documentation above contains ALL the rules you must follow
-2. Before selecting ANY product, re-read the relevant sections of the documentation
-3. NEVER skip or ignore any rule - every rule is mandatory
-4. When in doubt, refer back to the documentation
+BEFORE MAKING ANY DECISION, YOU MUST:
+1. READ the complete documentation above TWICE
+2. UNDERSTAND all rules and requirements
+3. APPLY rules in the correct order
+4. NEVER skip any mandatory rule
 
-PATIENT PROFILE (Already Transformed Per Documentation):
+PATIENT PROFILE:
 ${JSON.stringify(aiQuiz, null, 2)}
 
-CONCERN PRIORITY HIERARCHY (MANDATORY):
-PRIMARY CONCERN: "${primaryConcern}" - MUST use highest-scoring ingredients (scores 8-10)
-SECONDARY CONCERNS: ${secondaryConcerns.length > 0 ? secondaryConcerns.join(', ') : 'None'} - Can use supporting ingredients (scores 5-7)
+DECISION PRIORITY ORDER (STRICT HIERARCHY):
+1. SAFETY FIRST: Apply all safety rules from documentation
+2. ESSENTIALS SECOND: Cleanser + Moisturizer + SPF (MANDATORY)
+3. CONCERNS THIRD: Address primary concern with highest-scoring ingredients
+4. BUDGET LAST: Stay within ${aiQuiz.preferences.budget} budget
 
-CRITICAL RULES YOU MUST ENFORCE:
-
-RULE 1 - CONCERN TARGETING (Phase 4):
-- For PRIMARY concern "${primaryConcern}": Select products with HIGHEST-SCORING ingredients from docs
-- Refer to "Ingredient Effectiveness Matrix" in documentation
-- PRIMARY concerns MUST have primary actives (scores 8-10)
-- Do NOT use low-scoring ingredients for primary concerns
-
-RULE 2 - MANDATORY PRODUCTS (Phase 3, Rule R4):
-You MUST include ALL three essentials:
-✓ Cleanser (appropriate for ${aiQuiz.skinAssessment.skinType} skin)
-✓ Moisturizer (separate product - NOT just SPF)
-✓ SPF Protection (SPF 30+ minimum)
-
-RULE 3 - SENSITIVE SKIN HANDLING (Phase 2, Rule T5):
-${aiQuiz.skinAssessment.skinSensitivity === 'sensitive' ?
-                    `Patient has sensitive skin - BUT:
-- DO NOT avoid effective actives completely
-- SELECT gentle formulations of high-scoring ingredients
-- INCLUDE barrier-supporting ingredients (ceramides, niacinamide)
-- PROVIDE gradual introduction instructions
-- STILL address all concerns with appropriate actives`
-                    : 'Patient does not have sensitive skin - use standard formulations'}
-
-RULE 4 - AGE-BASED REQUIREMENTS (Phase 1):
-Patient age: ${aiQuiz.demographics.age}
-${aiQuiz.demographics.age === '18-25' ?
-                    '- REMOVE all retinol/retinal products (Rule S1)' :
-                    '- Retinoids ARE ALLOWED and RECOMMENDED for anti-aging concerns'}
-
-RULE 5 - PRODUCT COUNT (Phase 3):
-Time commitment: ${aiQuiz.preferences.timeCommitment}
-${aiQuiz.preferences.timeCommitment === '5_minute' ?
-                    'Required: 2-3 products minimum (Rule R1)' :
-                    aiQuiz.preferences.timeCommitment === '10_minute' ?
-                        'Required: 3-5 products (Rule R2)' :
-                        'Required: 4-6 products (Rule R3)'}
-
-RULE 6 - BUDGET ENFORCEMENT (Phase 6) - ABSOLUTE PRIORITY:
-Patient Budget: ${aiQuiz.preferences.budget}
-
-MANDATORY BUDGET RULES:
-✓ Total cost of ALL products MUST be ≤ ${aiQuiz.preferences.budget}
-✓ Calculate: Sum of ALL product prices
-✓ If total > ${aiQuiz.preferences.budget}: REMOVE products or SUBSTITUTE cheaper alternatives
-✓ NEVER exceed budget - even $1 over is FAILURE
-✓ Budget utilization MUST show: $X/${aiQuiz.preferences.budget} (Z%) where Z ≤ 100%
-
-BUDGET VALIDATION BEFORE RESPONDING:
-□ Added up ALL product prices?
-□ Total cost ≤ ${aiQuiz.preferences.budget}?
-□ If over budget: removed/substituted products?
-□ Still have essentials (Cleanser + Moisturizer + SPF)?
-□ Budget percentage ≤ 100%?
-
-IF ANY CHECKBOX UNCHECKED → REDO PRODUCT SELECTION INTERNALLY (DO NOT SHOW REVISION PROCESS)
-
-BUDGET TIER GUIDANCE:
-${(() => {
-                    const budgetNum = parseInt(aiQuiz.preferences.budget.replace(/[^0-9]/g, ''));
-                    if (budgetNum <= 70) {
-                        return `Low Budget ($40-$70): Focus on ESSENTIALS ONLY (Cleanser + Moisturizer with SPF). Skip treatments if needed to stay under budget.`;
-                    } else if (budgetNum <= 150) {
-                        return `Mid Budget ($70-$150): Essentials + 1-2 treatments. Allocate 60% to basics, 40% to treatments.`;
-                    } else {
-                        return `High Budget ($150-$250): Essentials + 2-3 treatments. Allocate 50% to basics, 50% to treatments.`;
-                    }
-                })()}
-
-AVAILABLE PRODUCTS DATABASE:
+AVAILABLE PRODUCTS:
 ${JSON.stringify(products, null, 2)}
 
-BEFORE YOU RESPOND:
-1. Re-read Phase 4 "Ingredient Effectiveness Matrix" for "${primaryConcern}"
-2. Identify which ingredients score 8-10 for this concern
-3. Find products containing those ingredients
-4. Verify you have Cleanser + Moisturizer + SPF
-5. Check compatibility matrix (Phase 5)
-6. CALCULATE TOTAL COST and verify ≤ ${aiQuiz.preferences.budget}
-7. If over budget: remove/substitute products and recalculate INTERNALLY
-8. DO NOT SHOW YOUR WORKING OR REVISION PROCESS - ONLY RETURN FINAL VALID JSON
+FINAL VALIDATION (MANDATORY BEFORE RESPONDING):
+□ Read documentation completely?
+□ Applied all safety rules?
+□ Included Cleanser + Moisturizer + SPF?
+□ Addressed primary concern "${primaryConcern}"?
+□ Total cost ≤ ${aiQuiz.preferences.budget}?
+□ No ingredient conflicts?
 
-RESPONSE FORMAT ENFORCEMENT - CRITICAL:
-
-YOUR ENTIRE RESPONSE MUST BE:
-- ONLY ONE SINGLE JSON OBJECT
-- NO explanatory text before or after the JSON
-- NO markdown code blocks (no \`\`\`json)
-- NO revision comments like "Let me revise..."
-- NO multiple JSON objects
-- NO thinking process shown
-- JUST THE RAW JSON OBJECT THAT MEETS ALL REQUIREMENTS
-
-IF YOUR FIRST CALCULATION IS OVER BUDGET:
-- DO THE REVISION SILENTLY IN YOUR HEAD
-- ONLY RETURN THE FINAL BUDGET-COMPLIANT JSON
-- DO NOT SHOW THE OVER-BUDGET VERSION
-
-EXPECTED JSON STRUCTURE (RETURN THIS EXACT FORMAT):
+RESPONSE FORMAT:
+Return ONLY this JSON structure:
 {
   "treatmentApproach": "single",
   "products": [
     {
-      "productId": "exact-product-id-from-database",
+      "productId": "exact-product-id",
       "targetConcern": "specific-concern",
       "priority": "primary",
       "routineStep": 1,
-      "usageInstructions": "detailed AM/PM instructions"
+      "usageInstructions": "detailed instructions"
     }
   ],
   "totalCost": 0,
   "budgetUtilization": "$X/${aiQuiz.preferences.budget} (Z%)",
-  "clinicalReasoning": "Explain: 1) Why primary concern ingredient was chosen (reference docs score), 2) Why all essentials included, 3) How routine addresses patient profile, 4) Why total cost is within budget",
-  "safetyNotes": ["specific precautions based on docs rules Add In one by one Index as a bullet Points"],
-  "routineInstructions": ["complete AM/PM routine with all products Add In one by one Index as a bullet Points"]
+  "clinicalReasoning": "Why these products were chosen",
+  "safetyNotes": ["safety note 1", "safety note 2"],
+  "routineInstructions": ["instruction 1", "instruction 2"]
 }
 
-FINAL VALIDATION CHECKLIST - Confirm INTERNALLY before responding:
-□ Primary concern has highest-scoring ingredient (8-10 from docs)?
-□ Cleanser included?
-□ Moisturizer included (separate from SPF)?
-□ SPF protection included?
-□ Product count matches time commitment?
-□ All products match ${aiQuiz.skinAssessment.skinType} skin type?
-□ No ingredient conflicts (Phase 5 checked)?
-□ TOTAL COST ≤ ${aiQuiz.preferences.budget}? ← CRITICAL
-□ Budget utilization ≤ 100%? ← CRITICAL
-□ Age-appropriate ingredients (${aiQuiz.demographics.age})?
-□ Response is ONLY ONE clean JSON object with NO extra text?
-
-If ANY checkbox is unchecked, REVISE INTERNALLY and only return the final valid JSON.
-
-DO NOT RESPOND WITH ANYTHING EXCEPT THE FINAL JSON OBJECT.
+RETURN ONLY THE JSON OBJECT - NO OTHER TEXT.
 `;
             console.log(`Starting AI consultation for ${aiQuiz.demographics.name}...`);
 
@@ -528,3 +428,160 @@ DO NOT RESPOND WITH ANYTHING EXCEPT THE FINAL JSON OBJECT.
 
 export default RecommendationService;
 export type { RecommendationResponse, ProductRecommendation };
+
+
+
+
+// Old Ai Prompt 
+// Step 4: Enhanced AI prompt with STRICT enforcement including BUDGET ENFORCEMENT
+// const aiPrompt = `
+// ${aiDocumentation}
+
+// CRITICAL INSTRUCTIONS - READ TWICE BEFORE RESPONDING:
+
+// 1. The documentation above contains ALL the rules you must follow
+// 2. Before selecting ANY product, re-read the relevant sections of the documentation
+// 3. NEVER skip or ignore any rule - every rule is mandatory
+// 4. When in doubt, refer back to the documentation
+
+// PATIENT PROFILE (Already Transformed Per Documentation):
+// ${JSON.stringify(aiQuiz, null, 2)}
+
+// CONCERN PRIORITY HIERARCHY (MANDATORY):
+// PRIMARY CONCERN: "${primaryConcern}" - MUST use highest-scoring ingredients (scores 8-10)
+// SECONDARY CONCERNS: ${secondaryConcerns.length > 0 ? secondaryConcerns.join(', ') : 'None'} - Can use supporting ingredients (scores 5-7)
+
+// CRITICAL RULES YOU MUST ENFORCE:
+
+// RULE 1 - CONCERN TARGETING (Phase 4):
+// - For PRIMARY concern "${primaryConcern}": Select products with HIGHEST-SCORING ingredients from docs
+// - Refer to "Ingredient Effectiveness Matrix" in documentation
+// - PRIMARY concerns MUST have primary actives (scores 8-10)
+// - Do NOT use low-scoring ingredients for primary concerns
+
+// RULE 2 - MANDATORY PRODUCTS (Phase 3, Rule R4):
+// You MUST include ALL three essentials:
+// ✓ Cleanser (appropriate for ${aiQuiz.skinAssessment.skinType} skin)
+// ✓ Moisturizer (separate product - NOT just SPF)
+// ✓ SPF Protection (SPF 30+ minimum)
+
+// RULE 3 - SENSITIVE SKIN HANDLING (Phase 2, Rule T5):
+// ${aiQuiz.skinAssessment.skinSensitivity === 'sensitive' ?
+//         `Patient has sensitive skin - BUT:
+// - DO NOT avoid effective actives completely
+// - SELECT gentle formulations of high-scoring ingredients
+// - INCLUDE barrier-supporting ingredients (ceramides, niacinamide)
+// - PROVIDE gradual introduction instructions
+// - STILL address all concerns with appropriate actives`
+//         : 'Patient does not have sensitive skin - use standard formulations'}
+
+// RULE 4 - AGE-BASED REQUIREMENTS (Phase 1):
+// Patient age: ${aiQuiz.demographics.age}
+// ${aiQuiz.demographics.age === '18-25' ?
+//         '- REMOVE all retinol/retinal products (Rule S1)' :
+//         '- Retinoids ARE ALLOWED and RECOMMENDED for anti-aging concerns'}
+
+// RULE 5 - PRODUCT COUNT (Phase 3):
+// Time commitment: ${aiQuiz.preferences.timeCommitment}
+// ${aiQuiz.preferences.timeCommitment === '5_minute' ?
+//         'Required: 2-3 products minimum (Rule R1)' :
+//         aiQuiz.preferences.timeCommitment === '10_minute' ?
+//             'Required: 3-5 products (Rule R2)' :
+//             'Required: 4-6 products (Rule R3)'}
+
+// RULE 6 - BUDGET ENFORCEMENT (Phase 6) - ABSOLUTE PRIORITY:
+// Patient Budget: ${aiQuiz.preferences.budget}
+
+// MANDATORY BUDGET RULES:
+// ✓ Total cost of ALL products MUST be ≤ ${aiQuiz.preferences.budget}
+// ✓ Calculate: Sum of ALL product prices
+// ✓ If total > ${aiQuiz.preferences.budget}: REMOVE products or SUBSTITUTE cheaper alternatives
+// ✓ NEVER exceed budget - even $1 over is FAILURE
+// ✓ Budget utilization MUST show: $X/${aiQuiz.preferences.budget} (Z%) where Z ≤ 100%
+
+// BUDGET VALIDATION BEFORE RESPONDING:
+// □ Added up ALL product prices?
+// □ Total cost ≤ ${aiQuiz.preferences.budget}?
+// □ If over budget: removed/substituted products?
+// □ Still have essentials (Cleanser + Moisturizer + SPF)?
+// □ Budget percentage ≤ 100%?
+
+// IF ANY CHECKBOX UNCHECKED → REDO PRODUCT SELECTION INTERNALLY (DO NOT SHOW REVISION PROCESS)
+
+// BUDGET TIER GUIDANCE:
+// ${(() => {
+//         const budgetNum = parseInt(aiQuiz.preferences.budget.replace(/[^0-9]/g, ''));
+//         if (budgetNum <= 70) {
+//             return `Low Budget ($40-$70): Focus on ESSENTIALS ONLY (Cleanser + Moisturizer with SPF). Skip treatments if needed to stay under budget.`;
+//         } else if (budgetNum <= 150) {
+//             return `Mid Budget ($70-$150): Essentials + 1-2 treatments. Allocate 60% to basics, 40% to treatments.`;
+//         } else {
+//             return `High Budget ($150-$250): Essentials + 2-3 treatments. Allocate 50% to basics, 50% to treatments.`;
+//         }
+//     })()}
+
+// AVAILABLE PRODUCTS DATABASE:
+// ${JSON.stringify(products, null, 2)}
+
+// BEFORE YOU RESPOND:
+// 1. Re-read Phase 4 "Ingredient Effectiveness Matrix" for "${primaryConcern}"
+// 2. Identify which ingredients score 8-10 for this concern
+// 3. Find products containing those ingredients
+// 4. Verify you have Cleanser + Moisturizer + SPF
+// 5. Check compatibility matrix (Phase 5)
+// 6. CALCULATE TOTAL COST and verify ≤ ${aiQuiz.preferences.budget}
+// 7. If over budget: remove/substitute products and recalculate INTERNALLY
+// 8. DO NOT SHOW YOUR WORKING OR REVISION PROCESS - ONLY RETURN FINAL VALID JSON
+
+// RESPONSE FORMAT ENFORCEMENT - CRITICAL:
+
+// YOUR ENTIRE RESPONSE MUST BE:
+// - ONLY ONE SINGLE JSON OBJECT
+// - NO explanatory text before or after the JSON
+// - NO markdown code blocks (no \`\`\`json)
+// - NO revision comments like "Let me revise..."
+// - NO multiple JSON objects
+// - NO thinking process shown
+// - JUST THE RAW JSON OBJECT THAT MEETS ALL REQUIREMENTS
+
+// IF YOUR FIRST CALCULATION IS OVER BUDGET:
+// - DO THE REVISION SILENTLY IN YOUR HEAD
+// - ONLY RETURN THE FINAL BUDGET-COMPLIANT JSON
+// - DO NOT SHOW THE OVER-BUDGET VERSION
+
+// EXPECTED JSON STRUCTURE (RETURN THIS EXACT FORMAT):
+// {
+//   "treatmentApproach": "single",
+//   "products": [
+//     {
+//       "productId": "exact-product-id-from-database",
+//       "targetConcern": "specific-concern",
+//       "priority": "primary",
+//       "routineStep": 1,
+//       "usageInstructions": "detailed AM/PM instructions"
+//     }
+//   ],
+//   "totalCost": 0,
+//   "budgetUtilization": "$X/${aiQuiz.preferences.budget} (Z%)",
+//   "clinicalReasoning": "Explain: 1) Why primary concern ingredient was chosen (reference docs score), 2) Why all essentials included, 3) How routine addresses patient profile, 4) Why total cost is within budget",
+//   "safetyNotes": ["specific precautions based on docs rules Add In one by one Index as a bullet Points"],
+//   "routineInstructions": ["complete AM/PM routine with all products Add In one by one Index as a bullet Points"]
+// }
+
+// FINAL VALIDATION CHECKLIST - Confirm INTERNALLY before responding:
+// □ Primary concern has highest-scoring ingredient (8-10 from docs)?
+// □ Cleanser included?
+// □ Moisturizer included (separate from SPF)?
+// □ SPF protection included?
+// □ Product count matches time commitment?
+// □ All products match ${aiQuiz.skinAssessment.skinType} skin type?
+// □ No ingredient conflicts (Phase 5 checked)?
+// □ TOTAL COST ≤ ${aiQuiz.preferences.budget}? ← CRITICAL
+// □ Budget utilization ≤ 100%? ← CRITICAL
+// □ Age-appropriate ingredients (${aiQuiz.demographics.age})?
+// □ Response is ONLY ONE clean JSON object with NO extra text?
+
+// If ANY checkbox is unchecked, REVISE INTERNALLY and only return the final valid JSON.
+
+// DO NOT RESPOND WITH ANYTHING EXCEPT THE FINAL JSON OBJECT.
+// `;
