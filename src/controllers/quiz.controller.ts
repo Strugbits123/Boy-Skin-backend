@@ -59,11 +59,10 @@ class QuizController {
             const quizResults: QuizResults = {
                 quizId: insertedQuizId,
                 productsId: finalProducts.map((p) => p.productId),
-                routineInstructions: recommendedProduct.routineInstructions,
-                safetyNotes: recommendedProduct.safetyNotes,
                 treatmentApproach: recommendedProduct.treatmentApproach,
                 clinicalReasoning: recommendedProduct.clinicalReasoning,
-                totalCost: recommendedProduct.totalCost
+                totalCost: recommendedProduct.totalCost,
+                tips: recommendedProduct.tips
             }
             const quizResultsId = await DbService.insertOneData("quiz-results", quizResults);
             await DbService.updateOneData("quizs", {
@@ -143,11 +142,10 @@ class QuizController {
                 userRoutineTime: finalUserQuizData.routine_time,
                 userAdditionalInfo: finalUserQuizData.additional_info,
                 products: finalProducts,
-                routineInstructions: quizData.routineInstructions,
-                safetyNotes: quizData.safetyNotes,
                 treatmentApproach: quizData.treatmentApproach,
                 clinicalReasoning: quizData.clinicalReasoning,
-                totalCost: quizData.totalCost
+                totalCost: quizData.totalCost,
+                tips: quizData.tips
             };
 
             return res.status(200).json({

@@ -2,6 +2,8 @@ import DbService from "./db.service";
 import ValidationService from "../services/helper.service";
 import { QuizModel, AICompatibleQuizModel } from "../models/quiz.model";
 import { ProductRecommendation, RecommendationResponse } from "../models/recommendation.model";
+import Product from "../models/product.model";
+import ProductFilterService from "./product.filter.service";
 import { RetryConfig, QueuedRequest } from "../models/ai.models";
 import * as fs from 'fs';
 import * as path from 'path';
@@ -25,6 +27,13 @@ class RecommendationService {
 
     // Cached docs content
     private static cachedDocsContent: string | null = null;
+    // Cached tips content
+    private static cachedTips: Array<{
+        tip: string;
+        skinTypes: string[];
+        category: string;
+        conflictsWith: string[];
+    }> | null = null;
 
     // Read and parse AI.doc.md from project root
     private static getAIDocumentation(): string {
@@ -48,6 +57,106 @@ class RecommendationService {
         } catch (error) {
             console.error('Error reading Ai.doc.txt:', error);
             throw new Error('AI documentation file not found. Ensure Ai.doc.txt exists in project root.');
+        }
+    }
+
+    // Read and parse Ai.tips.txt from project root (cached)
+    static getAITips(): Array<{
+        tip: string;
+        skinTypes: string[];
+        category: string;
+        conflictsWith: string[];
+    }> {
+        if (this.cachedTips) {
+            return this.cachedTips;
+        }
+
+        try {
+            const tipsPath = path.join(process.cwd(), 'Ai.tips.txt');
+            const raw = fs.readFileSync(tipsPath, 'utf-8');
+
+            const text = raw
+                .replace(/\r\n/g, '\n')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+
+            const lines = text.split('\n');
+            const tips: Array<{ tip: string; skinTypes: string[]; category: string; conflictsWith: string[]; }> = [];
+
+            let currentTip: { tip: string; skinTypes: string[]; category: string; conflictsWith: string[] } | null = null;
+
+            const extractQuoted = (s: string): string => {
+                // supports straight and curly quotes
+                const m = s.match(/["“”](.*?)["“”]/);
+                return (m && m[1]) ? m[1].trim() : s.replace(/^TIP:\s*/i, '').trim();
+            };
+
+            for (const rawLine of lines) {
+                const line = rawLine.trim();
+                if (!line) {
+                    continue;
+                }
+
+                if (line.toUpperCase().startsWith('TIP:')) {
+                    // push previous
+                    if (currentTip && currentTip.tip) {
+                        tips.push(currentTip);
+                    }
+                    currentTip = {
+                        tip: extractQuoted(line),
+                        skinTypes: [],
+                        category: '',
+                        conflictsWith: []
+                    };
+                    continue;
+                }
+
+                if (!currentTip) {
+                    continue;
+                }
+
+                if (line.toLowerCase().startsWith('- skin types:')) {
+                    const v = line.split(':')[1] ?? '';
+                    const list = v.split(',').map(s => s.trim()).filter(Boolean);
+                    currentTip.skinTypes = list.length > 0 ? list : ['All'];
+                    continue;
+                }
+
+                if (line.toLowerCase().startsWith('- category:')) {
+                    const v = line.split(':')[1] ?? '';
+                    currentTip.category = v.trim();
+                    continue;
+                }
+
+                if (line.toLowerCase().startsWith('- conflicts with:')) {
+                    const v = line.split(':')[1] ?? '';
+                    const extracted = extractQuoted(v);
+                    // may contain multiple by "..." and "..." pattern or comma separated
+                    const parts: string[] = [];
+                    const regex = /["“”](.*?)["“”]/g;
+                    let m: RegExpExecArray | null;
+                    while ((m = regex.exec(v)) !== null) {
+                        if (m[1]) parts.push(m[1].trim());
+                    }
+                    if (parts.length === 0) {
+                        const split = extracted.split(',').map(s => s.trim()).filter(Boolean);
+                        currentTip.conflictsWith = split;
+                    } else {
+                        currentTip.conflictsWith = parts;
+                    }
+                    continue;
+                }
+            }
+
+            if (currentTip && currentTip.tip) {
+                tips.push(currentTip);
+            }
+
+            this.cachedTips = tips;
+            return tips;
+        } catch (error) {
+            console.error('Error reading Ai.tips.txt:', error);
+            throw new Error('AI tips file not found or unreadable. Ensure Ai.tips.txt exists in project root.');
         }
     }
 
@@ -240,11 +349,18 @@ class RecommendationService {
 
             // Step 3: Get AI documentation (beautified from MD)
             const aiDocumentation = this.getAIDocumentation();
+            // Get curated tips list
+            const allTips = this.getAITips();
 
             // Determine primary vs secondary concerns
             const allConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary];
             const primaryConcern = allConcerns[0] || 'general';
             const secondaryConcerns = allConcerns.slice(1);
+
+            // PREFILTER: Safety → Skin Type → Strength → Budget-tier → Concern scoring
+            console.log(`Products fetched from Notion: ${products.length}`);
+            const filteredCandidates = ProductFilterService.prefilterProducts(aiQuiz, products);
+            console.log(`Products after pre-filter: ${filteredCandidates.length}`);
 
             // Step 4: ENFORCED DOCUMENTATION APPROACH - AI must read docs first
             const aiPrompt = `
@@ -267,8 +383,11 @@ DECISION PRIORITY ORDER (STRICT HIERARCHY):
 3. CONCERNS THIRD: Address primary concern with highest-scoring ingredients
 4. BUDGET LAST: Stay within ${aiQuiz.preferences.budget} budget
 
-AVAILABLE PRODUCTS:
-${JSON.stringify(products, null, 2)}
+AVAILABLE PRODUCTS (PRE-FILTERED CANDIDATES ONLY):
+${JSON.stringify(filteredCandidates, null, 2)}
+
+AVAILABLE TIPS (SELECT ONLY FROM THESE):
+${JSON.stringify(allTips, null, 2)}
 
 FINAL VALIDATION (MANDATORY BEFORE RESPONDING):
 □ Read documentation completely?
@@ -279,6 +398,8 @@ FINAL VALIDATION (MANDATORY BEFORE RESPONDING):
 □ No ingredient conflicts?
 
 RESPONSE FORMAT:
+Do NOT include routine instructions or safety notes.
+From the provided tips list above, select 3-6 tips that best match the patient's profile and the recommended products (skin type, sensitivity, actives, usage frequency). Only use tips from the list; do not invent new tips.
 Return ONLY this JSON structure:
 {
   "treatmentApproach": "single",
@@ -294,8 +415,7 @@ Return ONLY this JSON structure:
   "totalCost": 0,
   "budgetUtilization": "$X/${aiQuiz.preferences.budget} (Z%)",
   "clinicalReasoning": "Why these products were chosen",
-  "safetyNotes": ["safety note 1", "safety note 2"],
-  "routineInstructions": ["instruction 1", "instruction 2"]
+  "tips": ["tip 1", "tip 2"]
 }
 
 RETURN ONLY THE JSON OBJECT - NO OTHER TEXT.
@@ -355,9 +475,8 @@ RETURN ONLY THE JSON OBJECT - NO OTHER TEXT.
                 products: enhancedProducts,
                 totalCost,
                 budgetUtilization: recommendation.budgetUtilization || `$${totalCost}/${aiQuiz.preferences.budget}`,
-                routineInstructions: recommendation.routineInstructions || ['Follow routine as prescribed'],
-                safetyNotes: recommendation.safetyNotes || ['No safety notes'],
-                clinicalReasoning: recommendation.clinicalReasoning || 'Routine optimized for patient profile'
+                clinicalReasoning: recommendation.clinicalReasoning || 'Routine optimized for patient profile',
+                tips: Array.isArray(recommendation.tips) ? recommendation.tips : []
             };
 
         } catch (error: any) {
@@ -429,159 +548,3 @@ RETURN ONLY THE JSON OBJECT - NO OTHER TEXT.
 export default RecommendationService;
 export type { RecommendationResponse, ProductRecommendation };
 
-
-
-
-// Old Ai Prompt 
-// Step 4: Enhanced AI prompt with STRICT enforcement including BUDGET ENFORCEMENT
-// const aiPrompt = `
-// ${aiDocumentation}
-
-// CRITICAL INSTRUCTIONS - READ TWICE BEFORE RESPONDING:
-
-// 1. The documentation above contains ALL the rules you must follow
-// 2. Before selecting ANY product, re-read the relevant sections of the documentation
-// 3. NEVER skip or ignore any rule - every rule is mandatory
-// 4. When in doubt, refer back to the documentation
-
-// PATIENT PROFILE (Already Transformed Per Documentation):
-// ${JSON.stringify(aiQuiz, null, 2)}
-
-// CONCERN PRIORITY HIERARCHY (MANDATORY):
-// PRIMARY CONCERN: "${primaryConcern}" - MUST use highest-scoring ingredients (scores 8-10)
-// SECONDARY CONCERNS: ${secondaryConcerns.length > 0 ? secondaryConcerns.join(', ') : 'None'} - Can use supporting ingredients (scores 5-7)
-
-// CRITICAL RULES YOU MUST ENFORCE:
-
-// RULE 1 - CONCERN TARGETING (Phase 4):
-// - For PRIMARY concern "${primaryConcern}": Select products with HIGHEST-SCORING ingredients from docs
-// - Refer to "Ingredient Effectiveness Matrix" in documentation
-// - PRIMARY concerns MUST have primary actives (scores 8-10)
-// - Do NOT use low-scoring ingredients for primary concerns
-
-// RULE 2 - MANDATORY PRODUCTS (Phase 3, Rule R4):
-// You MUST include ALL three essentials:
-// ✓ Cleanser (appropriate for ${aiQuiz.skinAssessment.skinType} skin)
-// ✓ Moisturizer (separate product - NOT just SPF)
-// ✓ SPF Protection (SPF 30+ minimum)
-
-// RULE 3 - SENSITIVE SKIN HANDLING (Phase 2, Rule T5):
-// ${aiQuiz.skinAssessment.skinSensitivity === 'sensitive' ?
-//         `Patient has sensitive skin - BUT:
-// - DO NOT avoid effective actives completely
-// - SELECT gentle formulations of high-scoring ingredients
-// - INCLUDE barrier-supporting ingredients (ceramides, niacinamide)
-// - PROVIDE gradual introduction instructions
-// - STILL address all concerns with appropriate actives`
-//         : 'Patient does not have sensitive skin - use standard formulations'}
-
-// RULE 4 - AGE-BASED REQUIREMENTS (Phase 1):
-// Patient age: ${aiQuiz.demographics.age}
-// ${aiQuiz.demographics.age === '18-25' ?
-//         '- REMOVE all retinol/retinal products (Rule S1)' :
-//         '- Retinoids ARE ALLOWED and RECOMMENDED for anti-aging concerns'}
-
-// RULE 5 - PRODUCT COUNT (Phase 3):
-// Time commitment: ${aiQuiz.preferences.timeCommitment}
-// ${aiQuiz.preferences.timeCommitment === '5_minute' ?
-//         'Required: 2-3 products minimum (Rule R1)' :
-//         aiQuiz.preferences.timeCommitment === '10_minute' ?
-//             'Required: 3-5 products (Rule R2)' :
-//             'Required: 4-6 products (Rule R3)'}
-
-// RULE 6 - BUDGET ENFORCEMENT (Phase 6) - ABSOLUTE PRIORITY:
-// Patient Budget: ${aiQuiz.preferences.budget}
-
-// MANDATORY BUDGET RULES:
-// ✓ Total cost of ALL products MUST be ≤ ${aiQuiz.preferences.budget}
-// ✓ Calculate: Sum of ALL product prices
-// ✓ If total > ${aiQuiz.preferences.budget}: REMOVE products or SUBSTITUTE cheaper alternatives
-// ✓ NEVER exceed budget - even $1 over is FAILURE
-// ✓ Budget utilization MUST show: $X/${aiQuiz.preferences.budget} (Z%) where Z ≤ 100%
-
-// BUDGET VALIDATION BEFORE RESPONDING:
-// □ Added up ALL product prices?
-// □ Total cost ≤ ${aiQuiz.preferences.budget}?
-// □ If over budget: removed/substituted products?
-// □ Still have essentials (Cleanser + Moisturizer + SPF)?
-// □ Budget percentage ≤ 100%?
-
-// IF ANY CHECKBOX UNCHECKED → REDO PRODUCT SELECTION INTERNALLY (DO NOT SHOW REVISION PROCESS)
-
-// BUDGET TIER GUIDANCE:
-// ${(() => {
-//         const budgetNum = parseInt(aiQuiz.preferences.budget.replace(/[^0-9]/g, ''));
-//         if (budgetNum <= 70) {
-//             return `Low Budget ($40-$70): Focus on ESSENTIALS ONLY (Cleanser + Moisturizer with SPF). Skip treatments if needed to stay under budget.`;
-//         } else if (budgetNum <= 150) {
-//             return `Mid Budget ($70-$150): Essentials + 1-2 treatments. Allocate 60% to basics, 40% to treatments.`;
-//         } else {
-//             return `High Budget ($150-$250): Essentials + 2-3 treatments. Allocate 50% to basics, 50% to treatments.`;
-//         }
-//     })()}
-
-// AVAILABLE PRODUCTS DATABASE:
-// ${JSON.stringify(products, null, 2)}
-
-// BEFORE YOU RESPOND:
-// 1. Re-read Phase 4 "Ingredient Effectiveness Matrix" for "${primaryConcern}"
-// 2. Identify which ingredients score 8-10 for this concern
-// 3. Find products containing those ingredients
-// 4. Verify you have Cleanser + Moisturizer + SPF
-// 5. Check compatibility matrix (Phase 5)
-// 6. CALCULATE TOTAL COST and verify ≤ ${aiQuiz.preferences.budget}
-// 7. If over budget: remove/substitute products and recalculate INTERNALLY
-// 8. DO NOT SHOW YOUR WORKING OR REVISION PROCESS - ONLY RETURN FINAL VALID JSON
-
-// RESPONSE FORMAT ENFORCEMENT - CRITICAL:
-
-// YOUR ENTIRE RESPONSE MUST BE:
-// - ONLY ONE SINGLE JSON OBJECT
-// - NO explanatory text before or after the JSON
-// - NO markdown code blocks (no \`\`\`json)
-// - NO revision comments like "Let me revise..."
-// - NO multiple JSON objects
-// - NO thinking process shown
-// - JUST THE RAW JSON OBJECT THAT MEETS ALL REQUIREMENTS
-
-// IF YOUR FIRST CALCULATION IS OVER BUDGET:
-// - DO THE REVISION SILENTLY IN YOUR HEAD
-// - ONLY RETURN THE FINAL BUDGET-COMPLIANT JSON
-// - DO NOT SHOW THE OVER-BUDGET VERSION
-
-// EXPECTED JSON STRUCTURE (RETURN THIS EXACT FORMAT):
-// {
-//   "treatmentApproach": "single",
-//   "products": [
-//     {
-//       "productId": "exact-product-id-from-database",
-//       "targetConcern": "specific-concern",
-//       "priority": "primary",
-//       "routineStep": 1,
-//       "usageInstructions": "detailed AM/PM instructions"
-//     }
-//   ],
-//   "totalCost": 0,
-//   "budgetUtilization": "$X/${aiQuiz.preferences.budget} (Z%)",
-//   "clinicalReasoning": "Explain: 1) Why primary concern ingredient was chosen (reference docs score), 2) Why all essentials included, 3) How routine addresses patient profile, 4) Why total cost is within budget",
-//   "safetyNotes": ["specific precautions based on docs rules Add In one by one Index as a bullet Points"],
-//   "routineInstructions": ["complete AM/PM routine with all products Add In one by one Index as a bullet Points"]
-// }
-
-// FINAL VALIDATION CHECKLIST - Confirm INTERNALLY before responding:
-// □ Primary concern has highest-scoring ingredient (8-10 from docs)?
-// □ Cleanser included?
-// □ Moisturizer included (separate from SPF)?
-// □ SPF protection included?
-// □ Product count matches time commitment?
-// □ All products match ${aiQuiz.skinAssessment.skinType} skin type?
-// □ No ingredient conflicts (Phase 5 checked)?
-// □ TOTAL COST ≤ ${aiQuiz.preferences.budget}? ← CRITICAL
-// □ Budget utilization ≤ 100%? ← CRITICAL
-// □ Age-appropriate ingredients (${aiQuiz.demographics.age})?
-// □ Response is ONLY ONE clean JSON object with NO extra text?
-
-// If ANY checkbox is unchecked, REVISE INTERNALLY and only return the final valid JSON.
-
-// DO NOT RESPOND WITH ANYTHING EXCEPT THE FINAL JSON OBJECT.
-// `;

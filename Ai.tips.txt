@@ -1,0 +1,73 @@
+Skincare Routine Tips:
+
+TIP: “Wash face in the evening 1x times a day”
+
+- Skin Types: Dry
+- Category: Cleansing
+- Conflicts With: “Wash face in the morning and evening 2x times a day”
+
+TIP: “Wash face in the morning and evening 2x times a day”
+
+- Skin Types: Oily, Combination, Normal
+- Category: Cleansing
+- Conflicts With: “Wash face in the evening 1x times a day”
+
+TIP: “As a rule of thumb, apply products from thinnest to thickest consistency (after cleansing)”
+
+- Skin Types: All
+- Category: All
+- Conflicts With:
+
+TIP: “Massage in cleanser for 60 seconds (super important) to give it time to clear pores and remove sunscreen” always include this
+
+- Skin Types: All
+- Category: All
+- Conflicts With:
+
+TIP: “For sensitive skin, introduce new products slowly (wait 3-4 weeks between new routine additions)”
+
+- Skin Types: Sensitive
+- Category: All
+- Conflicts With:
+
+TIP: “For sensitive skin, always patch test new products on the neck or wrist first”
+
+- Skin Types: Sensitive
+- Category: All
+- Conflicts With:
+
+TIP: “For exfoliating products, apply 1-2x a week and scale up to 2-3x a week as needed. Over-exfoliating can damage your skin barrier!”
+
+- Skin Types: All
+- Category: Exfoliants
+- Conflicts With:
+
+TIP: “For exfoliating actives, purging (new breakouts) can occur as impurities rise to the surface of the skin. Give it over 2-4 weeks for most exfoliants and 4-6 weeks for retinoids before deciding if the product works for you”
+
+- Skin Types: All
+- Category: Exfoliants/Retinoids
+- Conflicts With:
+
+TIP: “When starting retinoids, start with 1-2x a week and scale up to every night as needed. Some irritation and dryness can occur. If experiencing this issue, try buffering with moisturizer (applying the retinoid over the moisturizer layer to slow absorption). Check packaging to ensure you’re using the appropriate amount (usually a pea-sized amount for the entire face)”
+
+- Skin Types: All
+- Category: Retinoids
+- Conflicts With:
+
+TIP: "Always apply sunscreen (SPF 30+) as the last step of your morning routine, even on cloudy days. Use the two-finger rule to estimate how much to apply. Ideally, re-apply every 2+ hours when exposed to direct sun"
+
+- Skin Types: All
+- Category: Sun Protection
+- Conflicts With:
+
+TIP: "Wait 30 seconds to 1 minute between applying different products to allow for proper absorption"
+
+- Skin Types: All
+- Category: Actives
+- Conflicts With:
+
+TIP: "Change pillowcases at least weekly and avoid touching your face to prevent bacteria buildup that can contribute to breakouts"
+
+- Skin Types: Acne-prone, active acne
+- Category: All
+- Conflicts With:

@@ -4,11 +4,10 @@ interface QuizResults {
     _id?: ObjectId;
     quizId: string;
     productsId: string[];
-    routineInstructions: string[];
-    safetyNotes: string[];
     treatmentApproach: string;
     clinicalReasoning: string;
     totalCost: number;
+    tips: string[];
 }
 
 export default QuizResults;

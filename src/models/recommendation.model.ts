@@ -21,9 +21,8 @@ interface RecommendationResponse {
     products: ProductRecommendation[];
     totalCost: number;
     budgetUtilization: string;
-    routineInstructions: string[];
-    safetyNotes: string[];
     clinicalReasoning: string;
+    tips: string[];
 }
 
 // Quiz data without email for processing
