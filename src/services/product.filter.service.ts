@@ -53,16 +53,18 @@ class ProductFilterService {
         const format = p.format?.name?.toLowerCase() || "";
         const funcTags = (p.function || []).map(f => (f.name || "").toLowerCase());
         const summary = p.summary?.plain_text?.toLowerCase() || "";
-        const requiresSpf = p.requiresSPF?.name?.toLowerCase() || "";
         const ingredientText = p.ingredientList?.plain_text?.toLowerCase() || "";
 
-        const text = [name, format, summary, funcTags.join(" "), requiresSpf, ingredientText].join(" ").toLowerCase();
+        // Build a text corpus WITHOUT using requiresSPF for SPF detection
+        const text = [name, format, summary, funcTags.join(" "), ingredientText].join(" ").toLowerCase();
 
         const isCleanser = /cleanser|face\s*wash|cleansing|wash|foam(ing)?\s*cleanser|gel\s*cleanser/.test(text);
         const isMoisturizer = /moisturi[sz]e|moisturi[sz]er|lotion|cream|hydrating|hydrate\b/.test(text);
-        const isSPF = /spf|sunscreen|sun\s*screen|broad\s*spectrum|pa\+/.test(text) || requiresSpf.includes("yes");
+        const hasSPF = /\bspf\b|sunscreen|sun\s*screen|broad\s*spectrum|pa\+/.test(text);
 
-        if (isSPF) return ["protect"];
+        // Moisturizer with SPF should count as both moisturize and protect
+        if (isMoisturizer && hasSPF) return ["moisturize", "protect"];
+        if (hasSPF) return ["protect"];
         if (isCleanser) return ["cleanse"];
         if (isMoisturizer) return ["moisturize"];
 
