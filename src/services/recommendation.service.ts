@@ -357,79 +357,67 @@ class RecommendationService {
             const primaryConcern = allConcerns[0] || 'general';
             const secondaryConcerns = allConcerns.slice(1);
 
-            // PREFILTER: Safety → Skin Type → Strength → Budget-tier → Concern scoring
+            // DETERMINISTIC PRODUCT SELECTION - Code-based selection for 100% reliability
             console.log(`Products fetched from Notion: ${products.length}`);
-            const filteredCandidates = ProductFilterService.prefilterProducts(aiQuiz, products);
-            console.log(`Products after pre-filter: ${filteredCandidates.length}`);
+            const selectedProducts = ProductFilterService.selectProductsDeterministically(aiQuiz, products);
+            console.log(`Products selected deterministically: ${selectedProducts.length}`);
 
-            // Step 4: ENFORCED DOCUMENTATION APPROACH - AI must read docs first
+            // Step 4: Prefilter tips based on skin type and sensitivity
+            const filteredTips = this.getFilteredTips(allTips, aiQuiz);
+
+            // Step 5: Generate AI response for tips and usage instructions only
             const aiPrompt = `
 ${aiDocumentation}
-
-CRITICAL ENFORCEMENT - READ DOCUMENTATION FIRST:
-
-BEFORE MAKING ANY DECISION, YOU MUST:
-1. READ the complete documentation above TWICE
-2. UNDERSTAND all rules and requirements
-3. APPLY rules in the correct order
-4. NEVER skip any mandatory rule
 
 PATIENT PROFILE:
 ${JSON.stringify(aiQuiz, null, 2)}
 
-DECISION PRIORITY ORDER (STRICT HIERARCHY):
-1. SAFETY FIRST: Apply all safety rules from documentation
-2. ESSENTIALS SECOND: Cleanser + Moisturizer + SPF (MANDATORY)
-3. CONCERNS THIRD: Address primary concern with highest-scoring ingredients
-4. BUDGET LAST: Stay within ${aiQuiz.preferences.budget} budget
+SELECTED PRODUCTS (ALREADY CHOSEN BY DETERMINISTIC LOGIC):
+${JSON.stringify(selectedProducts.map(p => ({
+                productId: p.productId,
+                productName: p.productName,
+                price: p.price,
+                primaryActiveIngredients: p.primaryActiveIngredients?.plain_text || '',
+                format: p.format?.name || '',
+                step: p.step?.map(s => s.name) || []
+            })), null, 2)}
 
-AVAILABLE PRODUCTS (PRE-FILTERED CANDIDATES ONLY):
-${JSON.stringify(filteredCandidates, null, 2)}
+AVAILABLE TIPS (SELECT ONLY FROM THESE - PRE-FILTERED FOR PATIENT):
+${JSON.stringify(filteredTips, null, 2)}
 
-AVAILABLE TIPS (SELECT ONLY FROM THESE):
-${JSON.stringify(allTips, null, 2)}
-
-FINAL VALIDATION (MANDATORY BEFORE RESPONDING):
-□ Read documentation completely?
-□ Applied all safety rules?
-□ Included Cleanser + Moisturizer + SPF?
-□ Addressed primary concern "${primaryConcern}"?
-□ Total cost ≤ ${aiQuiz.preferences.budget}?
-□ No ingredient conflicts?
+TASK: Generate usage instructions and select 3-6 relevant tips for the selected products.
 
 RESPONSE FORMAT:
-Do NOT include routine instructions or safety notes.
-From the provided tips list above, select 3-6 tips that best match the patient's profile and the recommended products (skin type, sensitivity, actives, usage frequency). Only use tips from the list; do not invent new tips.
 Return ONLY this JSON structure:
 {
   "treatmentApproach": "single",
   "products": [
     {
       "productId": "exact-product-id",
-      "targetConcern": "specific-concern",
+      "targetConcern": "specific-concern-based-on-ingredients",
       "priority": "primary",
       "routineStep": 1,
-      "usageInstructions": "detailed instructions"
+      "usageInstructions": "detailed usage instructions for this specific product"
     }
   ],
-  "totalCost": 0,
-  "budgetUtilization": "$X/${aiQuiz.preferences.budget} (Z%)",
-  "clinicalReasoning": "Why these products were chosen",
-  "tips": ["tip 1", "tip 2"]
+  "totalCost": ${selectedProducts.reduce((sum, p) => sum + (p.price || 0), 0)},
+  "budgetUtilization": "$${selectedProducts.reduce((sum, p) => sum + (p.price || 0), 0)}/${aiQuiz.preferences.budget}",
+  "clinicalReasoning": "Why these specific products were chosen based on patient profile and ingredient effectiveness",
+  "tips": ["tip 1", "tip 2", "tip 3"]
 }
 
 RETURN ONLY THE JSON OBJECT - NO OTHER TEXT.
 `;
-            console.log(`Starting AI consultation for ${aiQuiz.demographics.name}...`);
+            console.log(`Starting AI tips generation for ${aiQuiz.demographics.name}...`);
 
-            // Step 5: Call AI with retry mechanism
+            // Step 6: Call AI for tips and usage instructions only
             const aiResponse = await this.addToQueue(async () => {
-                return await this.makeAPICallWithRetry(aiPrompt, `consultation-${aiQuiz.demographics.name}`);
+                return await this.makeAPICallWithRetry(aiPrompt, `tips-${aiQuiz.demographics.name}`);
             }, 'high');
 
             const aiResponseText = aiResponse.content?.[0]?.text?.trim();
 
-            // Step 6: Parse AI response
+            // Step 7: Parse AI response
             let cleanResponse = aiResponseText || "{}";
             cleanResponse = cleanResponse.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
 
@@ -438,44 +426,54 @@ RETURN ONLY THE JSON OBJECT - NO OTHER TEXT.
                 recommendation = JSON.parse(cleanResponse);
             } catch (parseError) {
                 console.error('AI Response parsing failed:', cleanResponse);
-                throw new Error("AI provided invalid recommendation format");
+                // Fallback: create basic recommendation from selected products
+                recommendation = this.createFallbackRecommendation(selectedProducts, aiQuiz);
             }
 
-            console.log(`AI consultation completed for ${aiQuiz.demographics.name}`);
+            console.log(`AI tips generation completed for ${aiQuiz.demographics.name}`);
 
-            // Step 7: Validate and enhance products with full details
+            // Step 8: Create enhanced products from deterministic selection
             const enhancedProducts: ProductRecommendation[] = [];
             let totalCost = 0;
 
-            for (const recProduct of recommendation.products || []) {
-                const product = products.find(p => p.productId === recProduct.productId);
-                if (!product) {
-                    console.warn(`Product ${recProduct.productId} not found in database`);
-                    continue;
-                }
-
+            for (const product of selectedProducts) {
                 const productCost = product.price || 0;
                 totalCost += productCost;
 
+                // Find corresponding AI recommendation for this product
+                const aiProduct = recommendation.products?.find((p: any) => p.productId === product.productId);
+
                 enhancedProducts.push({
-                    productId: recProduct.productId,
+                    productId: product.productId,
                     productName: product.productName || 'Unknown Product',
-                    targetConcern: recProduct.targetConcern || 'General',
-                    priority: recProduct.priority || 'primary',
-                    routineStep: recProduct.routineStep || 1,
+                    targetConcern: aiProduct?.targetConcern || this.inferTargetConcern(product, aiQuiz),
+                    priority: aiProduct?.priority || 'primary',
+                    routineStep: aiProduct?.routineStep || this.inferRoutineStep(product),
                     price: productCost,
-                    usageInstructions: recProduct.usageInstructions || 'Follow product instructions'
+                    usageInstructions: aiProduct?.usageInstructions || this.generateDefaultUsageInstructions(product)
                 });
             }
 
-            // Step 8: Return final recommendation
+            // Step 8: Budget lower-bound validation (≥ 75% of stated budget)
+            const budgetMatch = aiQuiz.preferences.budget.match(/\$(\d+)/);
+            const budgetNum = budgetMatch ? parseInt(budgetMatch[1] || '0', 10) : 0;
+            const minUtilization = Math.round(budgetNum * 0.75);
+
+            let finalClinicalReasoning = recommendation.clinicalReasoning || 'Routine optimized for patient profile';
+            if (budgetNum > 0 && totalCost < minUtilization) {
+                finalClinicalReasoning += ` | Note: Budget utilization below 75% ($${totalCost} of $${budgetNum}). Catalog constraints or selected essentials/treatments kept it lower.`;
+            }
+
+            const utilizationString = `$${totalCost}/${aiQuiz.preferences.budget}`;
+
+            // Step 9: Return final recommendation
             return {
                 success: true,
                 treatmentApproach: recommendation.treatmentApproach || 'single',
                 products: enhancedProducts,
                 totalCost,
-                budgetUtilization: recommendation.budgetUtilization || `$${totalCost}/${aiQuiz.preferences.budget}`,
-                clinicalReasoning: recommendation.clinicalReasoning || 'Routine optimized for patient profile',
+                budgetUtilization: recommendation.budgetUtilization || utilizationString,
+                clinicalReasoning: finalClinicalReasoning,
                 tips: Array.isArray(recommendation.tips) ? recommendation.tips : []
             };
 
@@ -542,6 +540,128 @@ RETURN ONLY THE JSON OBJECT - NO OTHER TEXT.
         });
         this.requestQueue = [];
         console.log('Request queue cleared');
+    }
+
+    // Helper: Filter tips based on skin type and sensitivity
+    private static getFilteredTips(allTips: Array<{
+        tip: string;
+        skinTypes: string[];
+        category: string;
+        conflictsWith: string[];
+    }>, aiQuiz: AICompatibleQuizModel): Array<{
+        tip: string;
+        skinTypes: string[];
+        category: string;
+        conflictsWith: string[];
+    }> {
+        const skinType = aiQuiz.skinAssessment.skinType;
+        const sensitivity = aiQuiz.skinAssessment.skinSensitivity;
+
+        return allTips.filter(tip => {
+            // Filter by skin type
+            if (tip.skinTypes.length > 0 && !tip.skinTypes.includes('All')) {
+                const skinTypeMatch = tip.skinTypes.some(t =>
+                    t.toLowerCase().includes(skinType) ||
+                    (sensitivity === 'sensitive' && t.toLowerCase().includes('sensitive'))
+                );
+                if (!skinTypeMatch) return false;
+            }
+
+            // Filter by sensitivity
+            if (sensitivity === 'sensitive') {
+                // Include tips that are safe for sensitive skin
+                const sensitiveSafe = tip.category.toLowerCase().includes('sensitive') ||
+                    tip.tip.toLowerCase().includes('gentle') ||
+                    tip.tip.toLowerCase().includes('sensitive');
+                if (!sensitiveSafe) return false;
+            }
+
+            return true;
+        });
+    }
+
+    // Helper: Create fallback recommendation when AI fails
+    private static createFallbackRecommendation(selectedProducts: any[], aiQuiz: AICompatibleQuizModel): any {
+        const totalCost = selectedProducts.reduce((sum, p) => sum + (p.price || 0), 0);
+
+        return {
+            treatmentApproach: "single",
+            products: selectedProducts.map((product, index) => ({
+                productId: product.productId,
+                targetConcern: this.inferTargetConcern(product, aiQuiz),
+                priority: index < 3 ? "primary" : "secondary",
+                routineStep: this.inferRoutineStep(product),
+                usageInstructions: this.generateDefaultUsageInstructions(product)
+            })),
+            totalCost,
+            budgetUtilization: `$${totalCost}/${aiQuiz.preferences.budget}`,
+            clinicalReasoning: "Routine selected based on patient profile and ingredient effectiveness",
+            tips: ["Follow the recommended routine consistently", "Patch test new products", "Use SPF daily"]
+        };
+    }
+
+    // Helper: Infer target concern from product ingredients
+    private static inferTargetConcern(product: any, aiQuiz: AICompatibleQuizModel): string {
+        const primaryConcern = aiQuiz.concerns.primary[0] || 'general';
+        const ingredients = (product.primaryActiveIngredients?.plain_text || '').toLowerCase();
+
+        // Map ingredients to concerns
+        if (ingredients.includes('salicylic') || ingredients.includes('benzoyl peroxide')) {
+            return 'acne';
+        }
+        if (ingredients.includes('vitamin c') || ingredients.includes('ascorbic')) {
+            return 'hyperpigmentation';
+        }
+        if (ingredients.includes('retinol') || ingredients.includes('retinal')) {
+            return 'wrinkles';
+        }
+        if (ingredients.includes('niacinamide')) {
+            return 'pores';
+        }
+
+        return primaryConcern;
+    }
+
+    // Helper: Infer routine step from product
+    private static inferRoutineStep(product: any): number {
+        const steps = product.step?.map((s: any) => s.name?.toLowerCase()) || [];
+        const name = (product.productName || '').toLowerCase();
+
+        if (steps.includes('cleanse') || name.includes('cleanser') || name.includes('wash')) {
+            return 1;
+        }
+        if (steps.includes('treat') || steps.includes('serum') || name.includes('serum')) {
+            return 2;
+        }
+        if (steps.includes('moisturize') || name.includes('moisturizer') || name.includes('cream')) {
+            return 3;
+        }
+        if (steps.includes('protect') || name.includes('spf') || name.includes('sunscreen')) {
+            return 4;
+        }
+
+        return 3; // Default to moisturizer step
+    }
+
+    // Helper: Generate default usage instructions
+    private static generateDefaultUsageInstructions(product: any): string {
+        const steps = product.step?.map((s: any) => s.name?.toLowerCase()) || [];
+        const name = (product.productName || '').toLowerCase();
+
+        if (steps.includes('cleanse') || name.includes('cleanser')) {
+            return "Apply to wet face, massage gently, then rinse thoroughly with water. Use morning and evening.";
+        }
+        if (steps.includes('treat') || steps.includes('serum')) {
+            return "Apply a small amount to clean skin, avoiding eye area. Use as directed, typically once daily.";
+        }
+        if (steps.includes('moisturize') || name.includes('moisturizer')) {
+            return "Apply to clean skin, gently massage until absorbed. Use morning and evening.";
+        }
+        if (steps.includes('protect') || name.includes('spf')) {
+            return "Apply as the final step in your morning routine. Reapply every 2 hours if exposed to sun.";
+        }
+
+        return "Follow the product instructions on the packaging.";
     }
 }
 

@@ -44,7 +44,7 @@ Concerns (Multi-select):
 
 Preferences:
 - Time Commitment: "5_minute" | "10_minute" | "15+_minute"
-- Budget: "$40" to "$250"
+- Budget: "$40" to "$200"
 
 
 Safety Information (Free Text):
@@ -544,7 +544,7 @@ TIER 2: Mid Budget ($70-$150)
 - Target: 3-4 products
 
 
-TIER 3: High Budget ($150-$250)
+TIER 3: High Budget ($150-$200)
 - Focus: Essentials + Multiple Treatments
 - Cleanser: 10-15% of budget
 - Treatment 1 (Primary Concern): 25-30% of budget
