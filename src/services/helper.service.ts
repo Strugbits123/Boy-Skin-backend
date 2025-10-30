@@ -1,6 +1,40 @@
 import { AICompatibleQuizModel, QuizModel } from "../models/quiz.model";
 
 class ValidationService {
+    // Ingredients plain_text ko display-friendly array me convert kare
+    // Also returns a normalized string helpful for matching
+    static parseIngredientsPlainText(plain: string): { list: string[]; normalized: string } {
+        const raw = (plain || "").trim();
+        if (!raw) return { list: [], normalized: "" };
+
+        // Build a display string by inserting separators at common boundaries
+        let display = raw
+            .replace(/[\n\r\t]+/g, " ")
+            .replace(/\s*\/\s*/g, " | ")
+            .replace(/[;,·•|]+/g, " | ")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+
+        // Insert separators before TitleCase word boundaries to split long runs
+        display = display.replace(/\s+(?=[A-Z][a-z]+)/g, " | ");
+
+        const parts = display
+            .split(/\|/)
+            .map(s => s.trim())
+            .filter(Boolean);
+
+        // Normalized (lowercase, accents removed, punctuation to space)
+        const normalized = raw
+            .toLowerCase()
+            .normalize("NFKD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[\(\)\[\],.;:|•·\n\r\t]+/g, " ")
+            .replace(/\s*\/\s*/g, " ")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+
+        return { list: parts, normalized };
+    }
     static async validateBody(data: any, requiredFields: string[]): Promise<boolean> {
         try {
             for (const field of requiredFields) {

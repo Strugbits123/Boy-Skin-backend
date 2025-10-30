@@ -2,7 +2,6 @@ import DbService from "./db.service";
 import ValidationService from "../services/helper.service";
 import { QuizModel, AICompatibleQuizModel } from "../models/quiz.model";
 import { ProductRecommendation, RecommendationResponse } from "../models/recommendation.model";
-import Product from "../models/product.model";
 import ProductFilterService from "./product.filter.service";
 import { RetryConfig, QueuedRequest } from "../models/ai.models";
 import * as fs from 'fs';
@@ -10,6 +9,8 @@ import * as path from 'path';
 
 
 class RecommendationService {
+    // Toggle AI usage (products are selected locally; AI only for tips if enabled)
+    private static readonly USE_AI: boolean = false;
     // Enhanced Retry Configuration 
     private static readonly RETRY_CONFIG: RetryConfig = {
         maxRetries: 5,
@@ -27,13 +28,7 @@ class RecommendationService {
 
     // Cached docs content
     private static cachedDocsContent: string | null = null;
-    // Cached tips content
-    private static cachedTips: Array<{
-        tip: string;
-        skinTypes: string[];
-        category: string;
-        conflictsWith: string[];
-    }> | null = null;
+
 
     // Read and parse AI.doc.md from project root
     private static getAIDocumentation(): string {
@@ -55,7 +50,7 @@ class RecommendationService {
             this.cachedDocsContent = cleanContent;
             return cleanContent;
         } catch (error) {
-            console.error('Error reading Ai.doc.txt:', error);
+            if (process.env.DEBUG === 'true') console.error('Error reading Ai.doc.txt:', error);
             throw new Error('AI documentation file not found. Ensure Ai.doc.txt exists in project root.');
         }
     }
@@ -67,10 +62,6 @@ class RecommendationService {
         category: string;
         conflictsWith: string[];
     }> {
-        if (this.cachedTips) {
-            return this.cachedTips;
-        }
-
         try {
             const tipsPath = path.join(process.cwd(), 'Ai.tips.txt');
             const raw = fs.readFileSync(tipsPath, 'utf-8');
@@ -152,10 +143,9 @@ class RecommendationService {
                 tips.push(currentTip);
             }
 
-            this.cachedTips = tips;
             return tips;
         } catch (error) {
-            console.error('Error reading Ai.tips.txt:', error);
+            if (process.env.DEBUG === 'true') console.error('Error reading Ai.tips.txt:', error);
             throw new Error('AI tips file not found or unreadable. Ensure Ai.tips.txt exists in project root.');
         }
     }
@@ -202,7 +192,7 @@ class RecommendationService {
 
         for (let attempt = 0; attempt <= this.RETRY_CONFIG.maxRetries; attempt++) {
             try {
-                console.log(`API Request [${requestId}] - Attempt ${attempt + 1}/${this.RETRY_CONFIG.maxRetries + 1}`);
+
 
                 const timeSinceLastRequest = Date.now() - this.lastRequestTime;
                 if (timeSinceLastRequest < this.minRequestInterval) {
@@ -258,12 +248,12 @@ class RecommendationService {
                 }
 
                 const data = await response.json();
-                console.log(`API Request [${requestId}] - Success on attempt ${attempt + 1}`);
+
                 return data;
 
             } catch (error: any) {
                 lastError = error;
-                console.error(`API Request [${requestId}] - Attempt ${attempt + 1} failed: ${error.message}`);
+
 
                 if (error.message?.includes('authentication') ||
                     error.message?.includes('Bad request') ||
@@ -302,7 +292,7 @@ class RecommendationService {
                 this.requestQueue.push(queueItem);
             }
 
-            console.log(`Added request [${queueItem.id}] to queue. Queue length: ${this.requestQueue.length}`);
+
             this.processQueue();
         });
     }
@@ -322,7 +312,7 @@ class RecommendationService {
                 const result = await item.execute();
                 item.resolve(result);
             } catch (error) {
-                console.error(`Queue item [${item.id}] failed: ${error}`);
+
                 item.reject(error);
             }
 
@@ -332,7 +322,6 @@ class RecommendationService {
         }
 
         this.isProcessingQueue = false;
-        console.log(`Queue processing completed`);
     }
 
     static async getRecommendedProduct(quiz: QuizModel): Promise<RecommendationResponse> {
@@ -347,137 +336,59 @@ class RecommendationService {
                 throw new Error("No products found in database");
             }
 
-            // Step 3: Get AI documentation (beautified from MD)
-            const aiDocumentation = this.getAIDocumentation();
-            // Get curated tips list
+            // Step 3: Tips list (used regardless of AI usage)
             const allTips = this.getAITips();
 
             // Determine primary vs secondary concerns
             const allConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary];
             const primaryConcern = allConcerns[0] || 'general';
-            const secondaryConcerns = allConcerns.slice(1);
 
-            // PREFILTER: Safety → Skin Type → Strength → Budget-tier → Concern scoring
-            console.log(`Products fetched from Notion: ${products.length}`);
+            // PREFILTER: Local product selection
             const filteredCandidates = ProductFilterService.prefilterProducts(aiQuiz, products);
-            console.log(`Products after pre-filter: ${filteredCandidates.length}`);
 
-            // Step 4: ENFORCED DOCUMENTATION APPROACH - AI must read docs first
-            const aiPrompt = `
-${aiDocumentation}
+            if (!this.USE_AI) {
+                // Local response: build products from filtered candidates and pick tips
+                const enhancedProducts: ProductRecommendation[] = [];
+                let totalCost = 0;
+                for (const p of filteredCandidates) {
+                    const price = p.price || 0;
+                    totalCost += price;
+                    enhancedProducts.push({
+                        productId: p.productId,
+                        productName: p.productName || 'Unknown Product',
+                        targetConcern: primaryConcern,
+                        priority: 'primary',
+                        routineStep: 1,
+                        price,
+                        usageInstructions: 'Use as directed'
+                    });
+                }
 
-CRITICAL ENFORCEMENT - READ DOCUMENTATION FIRST:
+                // Simple tip selection: filter by skin type match or 'All'
+                const userSkin = aiQuiz.skinAssessment.skinType.toLowerCase();
+                const filteredTips = allTips.filter(t => t.skinTypes.some(st => st.toLowerCase() === 'all' || st.toLowerCase().includes(userSkin)));
+                const tips = filteredTips.slice(0, 6).map(t => t.tip);
 
-BEFORE MAKING ANY DECISION, YOU MUST:
-1. READ the complete documentation above TWICE
-2. UNDERSTAND all rules and requirements
-3. APPLY rules in the correct order
-4. NEVER skip any mandatory rule
+                return {
+                    success: true,
+                    treatmentApproach: 'single',
+                    products: enhancedProducts,
+                    totalCost,
+                    budgetUtilization: `$${totalCost}/${aiQuiz.preferences.budget}`,
+                    clinicalReasoning: 'Routine optimized locally per safety/type/strength/budget',
+                    tips
+                };
+            }
 
-PATIENT PROFILE:
-${JSON.stringify(aiQuiz, null, 2)}
-
-DECISION PRIORITY ORDER (STRICT HIERARCHY):
-1. SAFETY FIRST: Apply all safety rules from documentation
-2. ESSENTIALS SECOND: Cleanser + Moisturizer + SPF (MANDATORY)
-3. CONCERNS THIRD: Address primary concern with highest-scoring ingredients
-4. BUDGET LAST: Stay within ${aiQuiz.preferences.budget} budget
-
-AVAILABLE PRODUCTS (PRE-FILTERED CANDIDATES ONLY):
-${JSON.stringify(filteredCandidates, null, 2)}
-
-AVAILABLE TIPS (SELECT ONLY FROM THESE):
-${JSON.stringify(allTips, null, 2)}
-
-FINAL VALIDATION (MANDATORY BEFORE RESPONDING):
-□ Read documentation completely?
-□ Applied all safety rules?
-□ Included Cleanser + Moisturizer + SPF?
-□ Addressed primary concern "${primaryConcern}"?
-□ Total cost ≤ ${aiQuiz.preferences.budget}?
-□ No ingredient conflicts?
-
-RESPONSE FORMAT:
-Do NOT include routine instructions or safety notes.
-From the provided tips list above, select 3-6 tips that best match the patient's profile and the recommended products (skin type, sensitivity, actives, usage frequency). Only use tips from the list; do not invent new tips.
-Return ONLY this JSON structure:
-{
-  "treatmentApproach": "single",
-  "products": [
-    {
-      "productId": "exact-product-id",
-      "targetConcern": "specific-concern",
-      "priority": "primary",
-      "routineStep": 1,
-      "usageInstructions": "detailed instructions"
-    }
-  ],
-  "totalCost": 0,
-  "budgetUtilization": "$X/${aiQuiz.preferences.budget} (Z%)",
-  "clinicalReasoning": "Why these products were chosen",
-  "tips": ["tip 1", "tip 2"]
-}
-
-RETURN ONLY THE JSON OBJECT - NO OTHER TEXT.
-`;
-            console.log(`Starting AI consultation for ${aiQuiz.demographics.name}...`);
-
-            // Step 5: Call AI with retry mechanism
+            // Fallback: AI path (disabled by default)
+            const aiDocumentation = this.getAIDocumentation();
+            const aiPrompt = `${aiDocumentation}`;
             const aiResponse = await this.addToQueue(async () => {
                 return await this.makeAPICallWithRetry(aiPrompt, `consultation-${aiQuiz.demographics.name}`);
             }, 'high');
-
-            const aiResponseText = aiResponse.content?.[0]?.text?.trim();
-
-            // Step 6: Parse AI response
-            let cleanResponse = aiResponseText || "{}";
-            cleanResponse = cleanResponse.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
-
-            let recommendation: any;
-            try {
-                recommendation = JSON.parse(cleanResponse);
-            } catch (parseError) {
-                console.error('AI Response parsing failed:', cleanResponse);
-                throw new Error("AI provided invalid recommendation format");
-            }
-
-            console.log(`AI consultation completed for ${aiQuiz.demographics.name}`);
-
-            // Step 7: Validate and enhance products with full details
-            const enhancedProducts: ProductRecommendation[] = [];
-            let totalCost = 0;
-
-            for (const recProduct of recommendation.products || []) {
-                const product = products.find(p => p.productId === recProduct.productId);
-                if (!product) {
-                    console.warn(`Product ${recProduct.productId} not found in database`);
-                    continue;
-                }
-
-                const productCost = product.price || 0;
-                totalCost += productCost;
-
-                enhancedProducts.push({
-                    productId: recProduct.productId,
-                    productName: product.productName || 'Unknown Product',
-                    targetConcern: recProduct.targetConcern || 'General',
-                    priority: recProduct.priority || 'primary',
-                    routineStep: recProduct.routineStep || 1,
-                    price: productCost,
-                    usageInstructions: recProduct.usageInstructions || 'Follow product instructions'
-                });
-            }
-
-            // Step 8: Return final recommendation
-            return {
-                success: true,
-                treatmentApproach: recommendation.treatmentApproach || 'single',
-                products: enhancedProducts,
-                totalCost,
-                budgetUtilization: recommendation.budgetUtilization || `$${totalCost}/${aiQuiz.preferences.budget}`,
-                clinicalReasoning: recommendation.clinicalReasoning || 'Routine optimized for patient profile',
-                tips: Array.isArray(recommendation.tips) ? recommendation.tips : []
-            };
+            const aiResponseText = aiResponse.content?.[0]?.text?.trim() || '{}';
+            const recommendation = JSON.parse(aiResponseText);
+            return recommendation;
 
         } catch (error: any) {
             console.error(`Critical error in getRecommendedProduct: ${error?.message ?? error}`);
@@ -517,7 +428,7 @@ RETURN ONLY THE JSON OBJECT - NO OTHER TEXT.
 
             return await this.getRecommendedProduct(quiz);
         } catch (error: any) {
-            console.error('getFinalProduct error:', error);
+
             throw error;
         }
     }

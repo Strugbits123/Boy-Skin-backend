@@ -35,8 +35,7 @@ interface Product {
     function: MultiSelectItem[];
     cannotMixWith: MultiSelectItem[];
     link: string;
-    primaryActiveIngredients: TextProperty;
-    requiresSPF: SelectProperty;
+    primaryActiveIngredients: MultiSelectItem[];
     step: MultiSelectItem[];
     usageTime: MultiSelectItem[];
     sensitiveSkinFriendly: SelectProperty;

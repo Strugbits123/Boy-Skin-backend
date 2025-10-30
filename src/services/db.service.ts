@@ -118,6 +118,7 @@ class DbService {
         // Initial cache load - synchronous
         try {
             const products = await this.getNotionProducts();
+            // console.log(products[0]);
             this.cache.products = products;
             this.cache.lastUpdated = new Date();
             this.cache.updateAttempts = 0;
@@ -184,11 +185,16 @@ class DbService {
                 throw new Error("Invalid response format from Notion API");
             }
 
-            const products: Product[] = data.results.map((page: any) => {
+            const products: Product[] = data.results.map((page: any, index: number) => {
                 try {
                     const props = page.properties;
 
+                    if (index === 0) {
+                        // console.log(props);
+                        // const text = props?.['Step'];
+                        // console.log(text);
 
+                    }
                     return {
                         productId: page.id || "",
                         imageUrl: props?.["Image Link"]?.url || "",
@@ -242,22 +248,17 @@ class DbService {
 
                         link: props?.Link?.url || "",
 
-                        primaryActiveIngredients: {
-                            id: props?.['Primary Active Ingredients']?.id || "",
-                            plain_text: props?.['Primary Active Ingredients']?.rich_text?.[0]?.plain_text || ""
-                        },
+                        primaryActiveIngredients: props?.['Primary Active Ingredient(s)']?.multi_select?.map((item: NotionSelectItem) => ({
+                            id: item.id || "",
+                            name: item.name || "",
+                            color: item.color || ""
+                        })) || [],
 
-                        requiresSPF: {
-                            id: props?.['Requires SPF']?.select?.id || "",
-                            name: props?.['Requires SPF']?.select?.name || "",
-                            color: props?.['Requires SPF']?.select?.color || ""
-                        },
-
-                        step: props?.Step?.select ? [{
-                            id: props.Step.select.id || "",
-                            name: props.Step.select.name || "",
-                            color: props.Step.select.color || ""
-                        }] : [],
+                        step: props?.Step?.multi_select?.map((item: NotionSelectItem) => ({
+                            id: item.id || "",
+                            name: item.name || "",
+                            color: item.color || ""
+                        })) || [],
 
                         usageTime: props?.['Usage Time']?.multi_select?.map((item: NotionSelectItem) => ({
                             id: item.id || "",
