@@ -479,13 +479,6 @@ Rule C1: Single Active Rule
 - Primary actives: Retinoids, Benzoyl Peroxide, High-concentration AHA/BHA
 
 
-Rule C2: Supporting Ingredient Clearance  
-- Niacinamide: Compatible with most ingredients
-- Hyaluronic Acid: Compatible with all ingredients
-- Ceramides: Compatible with all ingredients
-- Peptides: Avoid with strong acids and retinoids
-
-
 Rule C3: pH Compatibility
 - Vitamin C (low pH) separate from AHA/BHA timing
 - Layer pH-neutral ingredients between conflicting actives

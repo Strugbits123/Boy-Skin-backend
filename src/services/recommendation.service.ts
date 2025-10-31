@@ -343,8 +343,14 @@ class RecommendationService {
             const allConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary];
             const primaryConcern = allConcerns[0] || 'general';
 
-            // PREFILTER: Local product selection
+            // 🔥 NEW: Use Advanced Recommendation System (AI Doc Compliant)
+            // const filteredCandidates = AdvancedProductRecommendationService.buildRecommendation(aiQuiz, products);
+
+            // ⚠️ OLD: Previous implementation (commented out for comparison)
             const filteredCandidates = ProductFilterService.prefilterProducts(aiQuiz, products);
+
+            // ✅ NEW: Retrieve user notes collected during filtering
+            const userNotes = ProductFilterService.getUserNotes();
 
             if (!this.USE_AI) {
                 // Local response: build products from filtered candidates and pick tips
@@ -367,7 +373,9 @@ class RecommendationService {
                 // Simple tip selection: filter by skin type match or 'All'
                 const userSkin = aiQuiz.skinAssessment.skinType.toLowerCase();
                 const filteredTips = allTips.filter(t => t.skinTypes.some(st => st.toLowerCase() === 'all' || st.toLowerCase().includes(userSkin)));
-                const tips = filteredTips.slice(0, 6).map(t => t.tip);
+
+                // ✅ NEW: Append user notes to tips (quality/safety explanations)
+                const tips = [...filteredTips.slice(0, 6).map(t => t.tip), ...userNotes];
 
                 return {
                     success: true,
