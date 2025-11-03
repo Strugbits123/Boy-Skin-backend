@@ -2,7 +2,7 @@ import DbService from "./db.service";
 import ValidationService from "../services/helper.service";
 import { QuizModel, AICompatibleQuizModel } from "../models/quiz.model";
 import { ProductRecommendation, RecommendationResponse } from "../models/recommendation.model";
-import ProductFilterService from "./product.filter.service";
+import ProductFilter from "./ProductRecommendation/ProductFilter";
 import { RetryConfig, QueuedRequest } from "../models/ai.models";
 import * as fs from 'fs';
 import * as path from 'path';
@@ -347,10 +347,15 @@ class RecommendationService {
             // const filteredCandidates = AdvancedProductRecommendationService.buildRecommendation(aiQuiz, products);
 
             // ⚠️ OLD: Previous implementation (commented out for comparison)
-            const filteredCandidates = ProductFilterService.prefilterProducts(aiQuiz, products);
+            const filteredCandidates = ProductFilter.prefilterProducts(aiQuiz, products);
+
+            // ✅ Log final recommendations
+            console.log('\n==================');
+            console.log(`Products Recommended for ${quiz.Name}`);
+            console.log('==================\n');
 
             // ✅ NEW: Retrieve user notes collected during filtering
-            const userNotes = ProductFilterService.getUserNotes();
+            const userNotes = ProductFilter.getUserNotes();
 
             if (!this.USE_AI) {
                 // Local response: build products from filtered candidates and pick tips
