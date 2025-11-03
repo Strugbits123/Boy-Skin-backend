@@ -1,5 +1,5 @@
 /**
- * Product Recommendation Filter - Main Orchestrator
+ * Product Recommendation Filter
  * Coordinates 10-step pipeline for personalized skincare routine generation
  */
 
@@ -17,6 +17,9 @@ import { BudgetManager } from "./budget/BudgetManager";
 
 export class ProductFilter {
 
+    /**
+     * Validates that routine contains all essential product categories
+     */
     static validateEssentials(selection: Product[]): {
         isValid: boolean;
         hasCleanser: boolean;
@@ -26,37 +29,43 @@ export class ProductFilter {
     } {
         const hasCleanser = selection.some(p => {
             const steps = ProductUtils.productSteps(p);
-            const match = steps.includes("cleanse");
-            return match;
+            return steps.includes("cleanse");
         });
 
         const hasMoisturizer = selection.some(p => {
             const steps = ProductUtils.productSteps(p);
-            const match = steps.includes("moisturize");
-            return match;
+            return steps.includes("moisturize");
         });
 
         const hasProtect = selection.some(p => {
             const steps = ProductUtils.productSteps(p);
-            const match = steps.includes("protect");
-            return match;
+            return steps.includes("protect");
+        });
+
+        const hasProtectViaCombo = !hasProtect && selection.some(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.includes("moisturize") && steps.includes("protect");
         });
 
         const hasTreatment = selection.some(p => {
             const steps = ProductUtils.productSteps(p);
-            const match = steps.includes("treat") || steps.includes("serum") || steps.includes("active");
-            return match;
+            return steps.includes("treat") || steps.includes("serum") || steps.includes("active");
         });
 
+        const finalHasProtect = hasProtect || hasProtectViaCombo;
+
         return {
-            isValid: hasCleanser && hasMoisturizer && hasProtect,
+            isValid: hasCleanser && hasMoisturizer && finalHasProtect,
             hasCleanser,
             hasMoisturizer,
-            hasProtect,
+            hasProtect: finalHasProtect,
             hasTreatment
         };
     }
 
+    /**
+     * Executes 10-step filtering pipeline to generate personalized routine
+     */
     static prefilterProducts(aiQuiz: AICompatibleQuizModel, allProducts: Product[]): Product[] {
         EssentialSelector.clearUserNotes();
 
@@ -86,7 +95,7 @@ export class ProductFilter {
         let final = compatible;
 
         if (!validation.isValid) {
-            console.error('❌ CRITICAL: Core essentials missing after pipeline!');
+            console.error('CRITICAL: Core essentials missing after pipeline!');
             console.error(`Missing: Cleanser=${!validation.hasCleanser}, Moisturizer=${!validation.hasMoisturizer}, SPF=${!validation.hasProtect}`);
 
             const backupEssentials = EssentialSelector.ensureEssentials(aiQuiz, allProducts, allProducts);

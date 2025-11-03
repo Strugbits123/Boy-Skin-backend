@@ -4,6 +4,7 @@ import { QuizModel, AICompatibleQuizModel } from "../models/quiz.model";
 import { ProductRecommendation, RecommendationResponse } from "../models/recommendation.model";
 import ProductFilter from "./ProductRecommendation/ProductFilter";
 import { RetryConfig, QueuedRequest } from "../models/ai.models";
+import { getRelevantTips } from "../config/tips.config";
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -145,8 +146,8 @@ class RecommendationService {
 
             return tips;
         } catch (error) {
-            if (process.env.DEBUG === 'true') console.error('Error reading Ai.tips.txt:', error);
-            throw new Error('AI tips file not found or unreadable. Ensure Ai.tips.txt exists in project root.');
+            if (process.env.DEBUG === 'true') console.error('Error reading Ai.doc.txt:', error);
+            throw new Error('AI documentation file not found. Ensure Ai.doc.txt exists in project root.');
         }
     }
 
@@ -336,29 +337,18 @@ class RecommendationService {
                 throw new Error("No products found in database");
             }
 
-            // Step 3: Tips list (used regardless of AI usage)
-            const allTips = this.getAITips();
-
-            // Determine primary vs secondary concerns
             const allConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary];
             const primaryConcern = allConcerns[0] || 'general';
 
-            // 🔥 NEW: Use Advanced Recommendation System (AI Doc Compliant)
-            // const filteredCandidates = AdvancedProductRecommendationService.buildRecommendation(aiQuiz, products);
-
-            // ⚠️ OLD: Previous implementation (commented out for comparison)
             const filteredCandidates = ProductFilter.prefilterProducts(aiQuiz, products);
 
-            // ✅ Log final recommendations
             console.log('\n==================');
             console.log(`Products Recommended for ${quiz.Name}`);
             console.log('==================\n');
 
-            // ✅ NEW: Retrieve user notes collected during filtering
             const userNotes = ProductFilter.getUserNotes();
 
             if (!this.USE_AI) {
-                // Local response: build products from filtered candidates and pick tips
                 const enhancedProducts: ProductRecommendation[] = [];
                 let totalCost = 0;
                 for (const p of filteredCandidates) {
@@ -375,12 +365,12 @@ class RecommendationService {
                     });
                 }
 
-                // Simple tip selection: filter by skin type match or 'All'
-                const userSkin = aiQuiz.skinAssessment.skinType.toLowerCase();
-                const filteredTips = allTips.filter(t => t.skinTypes.some(st => st.toLowerCase() === 'all' || st.toLowerCase().includes(userSkin)));
+                const userSkin = aiQuiz.skinAssessment.skinType;
+                const isSensitive = aiQuiz.skinAssessment.skinSensitivity === 'sensitive';
 
-                // ✅ NEW: Append user notes to tips (quality/safety explanations)
-                const tips = [...filteredTips.slice(0, 6).map(t => t.tip), ...userNotes];
+                const relevantTips = getRelevantTips(userSkin, isSensitive, filteredCandidates);
+
+                const tips = [...relevantTips, ...userNotes];
 
                 return {
                     success: true,

@@ -116,6 +116,27 @@ class QuizController {
                     finalProducts.push(productData);
                 }
             }
+
+            const sortedProducts = finalProducts.sort((a, b) => {
+                const getStepOrder = (product: any): number => {
+                    const steps = (product.step || []).map((s: any) => (s.name || "").toLowerCase());
+
+                    if (steps.some((s: string) => s.includes("cleanse"))) return 1;
+
+                    const hasMoisturize = steps.some((s: string) => s.includes("moistur"));
+                    if (hasMoisturize) return 2;
+
+                    const hasProtect = steps.some((s: string) => s.includes("protect"));
+                    if (hasProtect) return 3;
+
+                    if (steps.some((s: string) => s.includes("treat") || s.includes("serum") || s.includes("active"))) return 4;
+
+                    return 5;
+                };
+
+                return getStepOrder(a) - getStepOrder(b);
+            });
+
             const userQuizData = await DbService.getOneData("quizs", {
                 _id: new ObjectId(quizData.quizId.toString())
             });
@@ -141,7 +162,7 @@ class QuizController {
                 userBudget: finalUserQuizData.Budget,
                 userRoutineTime: finalUserQuizData.routine_time,
                 userAdditionalInfo: finalUserQuizData.additional_info,
-                products: finalProducts,
+                products: sortedProducts,
                 treatmentApproach: quizData.treatmentApproach,
                 clinicalReasoning: quizData.clinicalReasoning,
                 totalCost: quizData.totalCost,
