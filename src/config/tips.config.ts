@@ -7,6 +7,7 @@ import { SkincareTip } from "../models/tips.model";
 import Product from "../models/product.model";
 
 export const SKINCARE_TIPS: SkincareTip[] = [
+    // CLEANSING TIPS - Skin Type Specific
     {
         tip: "Wash face in the evening 1x times a day",
         skinTypes: ['dry'],
@@ -21,65 +22,123 @@ export const SKINCARE_TIPS: SkincareTip[] = [
         relatedIngredients: ['cleanser', 'face wash', 'gel cleanser', 'foaming cleanser'],
         conflictsWith: "Wash face in the evening 1x times a day"
     },
+
+    // UNIVERSAL TIPS - Truly for everyone
     {
-        tip: "Massage in cleanser for 60 seconds (super important) to give it time to clear pores and remove sunscreen",
+        tip: "Massage in cleanser for 60 seconds to effectively clear pores and remove sunscreen",
         skinTypes: ['all'],
         category: 'cleansing',
         relatedIngredients: ['cleanser', 'face wash', 'gel cleanser', 'foam cleanser', 'oil cleanser']
     },
     {
-        tip: "As a rule of thumb, apply products from thinnest to thickest consistency (after cleansing)",
+        tip: "Apply products from thinnest to thickest consistency after cleansing",
         skinTypes: ['all'],
         category: 'general',
         relatedIngredients: []
     },
     {
-        tip: "Wait 30 seconds to 1 minute between applying different products to allow for proper absorption",
-        skinTypes: ['all'],
-        category: 'actives',
-        relatedIngredients: ['retinol', 'retinal', 'retinoid', 'adapalene', 'tretinoin', 'aha', 'bha', 'glycolic', 'salicylic', 'lactic', 'vitamin c', 'ascorbic']
-    },
-    {
-        tip: "For sensitive skin, introduce new products slowly (wait 3-4 weeks between new routine additions)",
-        skinTypes: ['sensitive'],
-        category: 'general',
-        relatedIngredients: []
-    },
-    {
-        tip: "For sensitive skin, always patch test new products on the neck or wrist first",
-        skinTypes: ['sensitive'],
-        category: 'general',
-        relatedIngredients: []
-    },
-    {
-        tip: "For exfoliating products, apply 1-2x a week and scale up to 2-3x a week as needed. Over-exfoliating can damage your skin barrier!",
-        skinTypes: ['all'],
-        category: 'exfoliants',
-        relatedIngredients: ['aha', 'bha', 'glycolic', 'salicylic', 'lactic', 'mandelic', 'exfoliant', 'exfoliating']
-    },
-    {
-        tip: "For exfoliating actives, purging (new breakouts) can occur as impurities rise to the surface of the skin. Give it over 2-4 weeks for most exfoliants and 4-6 weeks for retinoids before deciding if the product works for you",
-        skinTypes: ['all'],
-        category: 'exfoliants',
-        relatedIngredients: ['aha', 'bha', 'glycolic', 'salicylic', 'lactic', 'retinol', 'retinal', 'retinoid']
-    },
-    {
-        tip: "When starting retinoids, start with 1-2x a week and scale up to every night as needed. Some irritation and dryness can occur. If experiencing this issue, try buffering with moisturizer (applying the retinoid over the moisturizer layer to slow absorption). Check packaging to ensure you're using the appropriate amount (usually a pea-sized amount for the entire face)",
-        skinTypes: ['all'],
-        category: 'retinoids',
-        relatedIngredients: ['retinol', 'retinal', 'retinoid', 'adapalene', 'tretinoin']
-    },
-    {
-        tip: "Always apply sunscreen (SPF 30+) as the last step of your morning routine, even on cloudy days. Use the two-finger rule to estimate how much to apply. Ideally, re-apply every 2+ hours when exposed to direct sun",
+        tip: "Apply broad-spectrum SPF 30+ sunscreen as the final step in your morning routine. Use 1/4 teaspoon for face and neck, and reapply every 2 hours during sun exposure",
         skinTypes: ['all'],
         category: 'sun protection',
         relatedIngredients: ['spf', 'sunscreen', 'sun protection', 'uv protection']
     },
+
+    // MEDICALLY SAFE TIPS - For Normal/Non-Sensitive Skin
     {
-        tip: "Change pillowcases at least weekly and avoid touching your face to prevent bacteria buildup that can contribute to breakouts",
+        tip: "Begin exfoliating once per week and maintain for 4 weeks before considering increase to twice weekly",
+        skinTypes: ['normal', 'oily', 'combination', 'dry'],
+        category: 'exfoliants',
+        relatedIngredients: ['aha', 'bha', 'glycolic', 'salicylic', 'lactic', 'mandelic', 'exfoliant', 'exfoliating']
+    },
+    {
+        tip: "Initial skin adjustment may occur with actives. Stop immediately if you experience burning or excessive redness. Consult a dermatologist if symptoms persist after 4 weeks",
+        skinTypes: ['normal', 'oily', 'combination', 'dry'],
+        category: 'exfoliants',
+        relatedIngredients: ['aha', 'bha', 'glycolic', 'salicylic', 'lactic', 'retinol', 'retinal', 'retinoid']
+    },
+    {
+        tip: "Start retinoids once every 3 days for 2 weeks, then every other day, gradually building to nightly use over 6-8 weeks. Use a pea-sized amount for your entire face",
+        skinTypes: ['normal', 'oily', 'combination', 'dry'],
+        category: 'retinoids',
+        relatedIngredients: ['retinol', 'retinal', 'retinoid', 'adapalene', 'tretinoin']
+    },
+    {
+        tip: "Wait 5-10 minutes between applying different active ingredients to prevent chemical interactions and irritation",
+        skinTypes: ['normal', 'oily', 'combination', 'dry'],
+        category: 'actives',
+        relatedIngredients: ['retinol', 'retinal', 'retinoid', 'aha', 'bha', 'glycolic', 'salicylic', 'vitamin c']
+    },
+
+    // MEDICALLY SAFE TIPS - For Sensitive Skin Only
+    {
+        tip: "Introduce new products one at a time - wait 4-6 weeks between adding new items to assess tolerance safely",
+        skinTypes: ['sensitive'],
+        category: 'general',
+        relatedIngredients: []
+    },
+    {
+        tip: "Always patch test new products on your inner wrist for 24-48 hours before facial application. Discontinue if any redness, burning, or itching occurs",
+        skinTypes: ['sensitive'],
+        category: 'general',
+        relatedIngredients: []
+    },
+    {
+        tip: "Start exfoliating products once every 2 weeks initially, then once per week after 6 weeks if well-tolerated. Stop immediately if irritation develops",
+        skinTypes: ['sensitive'],
+        category: 'exfoliants',
+        relatedIngredients: ['aha', 'bha', 'glycolic', 'salicylic', 'lactic', 'mandelic', 'exfoliant', 'exfoliating']
+    },
+    {
+        tip: "Begin retinoids once per week for 4 weeks, then twice weekly if tolerated. Always apply over moisturizer to buffer absorption and reduce irritation risk",
+        skinTypes: ['sensitive'],
+        category: 'retinoids',
+        relatedIngredients: ['retinol', 'retinal', 'retinoid', 'adapalene', 'tretinoin']
+    },
+    {
+        tip: "Wait 10-15 minutes between applying different active products to minimize potential adverse reactions",
+        skinTypes: ['sensitive'],
+        category: 'actives',
+        relatedIngredients: ['retinol', 'retinal', 'retinoid', 'aha', 'bha', 'glycolic', 'salicylic', 'vitamin c']
+    },
+    {
+        tip: "Allow 6-8 weeks minimum to evaluate active ingredients effectiveness. Discontinue and consult a dermatologist if persistent irritation occurs",
+        skinTypes: ['sensitive'],
+        category: 'exfoliants',
+        relatedIngredients: ['aha', 'bha', 'glycolic', 'salicylic', 'lactic', 'retinol', 'retinal', 'retinoid']
+    },
+
+    // ACNE-SPECIFIC TIPS
+    {
+        tip: "Change pillowcases weekly and avoid touching your face to prevent bacteria buildup",
         skinTypes: ['acne-prone', 'active acne'],
         category: 'general',
         relatedIngredients: []
+    },
+
+    // ADDITIONAL SAFETY TIPS
+    {
+        tip: "Never combine retinoids with AHA/BHA acids in the same routine to prevent severe irritation. Use them on alternating nights",
+        skinTypes: ['all'],
+        category: 'safety',
+        relatedIngredients: ['retinol', 'retinal', 'retinoid', 'aha', 'bha', 'glycolic', 'salicylic']
+    },
+    {
+        tip: "Stop using active ingredients 1 week before any professional facial treatments, chemical peels, or laser procedures",
+        skinTypes: ['all'],
+        category: 'safety',
+        relatedIngredients: ['retinol', 'retinal', 'retinoid', 'aha', 'bha', 'glycolic', 'salicylic']
+    },
+    {
+        tip: "Avoid vitamin C serums in the same routine as retinoids or acids to prevent destabilization and irritation",
+        skinTypes: ['all'],
+        category: 'safety',
+        relatedIngredients: ['vitamin c', 'ascorbic', 'retinol', 'aha', 'bha']
+    },
+    {
+        tip: "If you experience persistent burning, severe redness, or peeling that doesn't improve within 3 days, stop all active ingredients and consult a dermatologist",
+        skinTypes: ['all'],
+        category: 'safety',
+        relatedIngredients: ['retinol', 'retinal', 'retinoid', 'aha', 'bha', 'glycolic', 'salicylic']
     }
 ];
 
@@ -100,16 +159,33 @@ export function getRelevantTips(skinType: string, isSensitive: boolean, products
     const searchText = `${allIngredients} ${productNames}`;
 
     const filteredTips = SKINCARE_TIPS.filter(tip => {
+        // Improved skin type matching logic
         const skinMatch = tip.skinTypes.some(st => {
             const tipSkinType = st.toLowerCase();
+
+            // Universal tips for everyone
             if (tipSkinType === 'all') return true;
+
+            // Sensitive-specific tips only for sensitive users
             if (tipSkinType === 'sensitive') return isSensitive;
-            return tipSkinType === normalizedSkinType;
+
+            // Non-sensitive specific tips only for non-sensitive users  
+            if (tipSkinType === normalizedSkinType && !isSensitive) return true;
+
+            // Acne-specific matching (can be sensitive or non-sensitive)
+            if (tipSkinType === 'acne-prone' || tipSkinType === 'active acne') {
+                return normalizedSkinType === tipSkinType;
+            }
+
+            return false;
         });
+
         if (!skinMatch) return false;
 
+        // If no specific ingredients required, include the tip
         if (tip.relatedIngredients.length === 0) return true;
 
+        // Check if tip is relevant to current products
         const hasRelevantIngredient = tip.relatedIngredients.some(ingredient =>
             searchText.includes(ingredient.toLowerCase())
         );
@@ -117,11 +193,42 @@ export function getRelevantTips(skinType: string, isSensitive: boolean, products
         return hasRelevantIngredient;
     });
 
+    // Prioritize tips by category to ensure balanced advice
+    const tipsByCategory = new Map<string, SkincareTip[]>();
+
+    filteredTips.forEach(tip => {
+        if (!tipsByCategory.has(tip.category)) {
+            tipsByCategory.set(tip.category, []);
+        }
+        tipsByCategory.get(tip.category)!.push(tip);
+    });
+
     const selectedTips: SkincareTip[] = [];
     const excludedConflicts = new Set<string>();
+    const usedCategories = new Set<string>();
 
+    // First pass: Select one tip from each category
+    for (const [category, tips] of tipsByCategory) {
+        for (const tip of tips) {
+            if (excludedConflicts.has(tip.tip)) continue;
+
+            selectedTips.push(tip);
+            usedCategories.add(category);
+
+            if (tip.conflictsWith) {
+                excludedConflicts.add(tip.conflictsWith);
+            }
+            break; // Only one tip per category in first pass
+        }
+
+        if (selectedTips.length >= 4) break; // Limit first pass
+    }
+
+    // Second pass: Fill remaining slots from any category
     for (const tip of filteredTips) {
+        if (selectedTips.length >= 6) break;
         if (excludedConflicts.has(tip.tip)) continue;
+        if (selectedTips.some(selected => selected.tip === tip.tip)) continue;
 
         selectedTips.push(tip);
 

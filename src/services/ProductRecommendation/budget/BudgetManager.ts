@@ -280,14 +280,7 @@ export class BudgetManager {
                 }
             }
 
-            if (total > ceil) {
-                if (replacementAttempted && !replacementSuccessful) {
-
-                    const budgetNote = `Note: Your personalized routine ($${total}) slightly exceeds your budget ($${ceil}) because we prioritized products that best match your ${skinType.toLowerCase()} skin type and your specific concerns. We couldn't find cheaper alternatives that would provide the same quality results while maintaining safety and effectiveness. We recommend keeping this routine for optimal results, but you can adjust your budget if needed.`;
-
-                    EssentialSelector.addUserNote(budgetNote);
-                }
-            }
+            // Note: Budget note generation moved to ProductFilter.ts for accurate final cost calculation
 
             return selection;
         }

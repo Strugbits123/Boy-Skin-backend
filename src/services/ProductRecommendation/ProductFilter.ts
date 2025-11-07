@@ -243,12 +243,35 @@ export class ProductFilter {
         const finalValidation = this.validateEssentials(ordered);
 
         if (!finalValidation.isValid) {
-            console.error('❌❌❌ CRITICAL ERROR: Core essential products missing after all steps!');
-            console.error('Missing:', {
-                cleanser: !finalValidation.hasCleanser,
-                moisturizer: !finalValidation.hasMoisturizer,
-                protect: !finalValidation.hasProtect
-            });
+            // console.error('❌❌❌ CRITICAL ERROR: Core essential products missing after all steps!');
+            // console.error('Missing:', {
+            //     cleanser: !finalValidation.hasCleanser,
+            //     moisturizer: !finalValidation.hasMoisturizer,
+            //     protect: !finalValidation.hasProtect
+            // });
+        }
+
+        // Generate accurate budget and treatment notes with final calculations
+        const finalCost = ProductUtils.totalCost(ordered);
+        const { ceil } = BudgetManager.getBudgetBounds(aiQuiz);
+        const userSkinType = aiQuiz.skinAssessment.skinType;
+        
+        // Check if routine has treatment products
+        const hasTreatments = ordered.some(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.includes("treat") || steps.includes("serum") || steps.includes("active");
+        });
+        
+        // Generate treatment note for sensitive skin without treatments
+        if (!hasTreatments && aiQuiz.skinAssessment.skinSensitivity === "sensitive") {
+            const treatmentNote = `Note: We couldn't include a treatment product in your routine because we couldn't find one that matches your ${userSkinType.toLowerCase()} skin type and addresses your specific concerns safely. We've prioritized your core essentials (cleanser, moisturizer, and SPF) to ensure the best results without compromising on quality or safety.`;
+            EssentialSelector.addUserNote(treatmentNote);
+        }
+        
+        // Generate budget note only if actually over budget
+        if (finalCost > ceil) {
+            const budgetNote = `Note: Your personalized routine ($${finalCost.toFixed(2)}) slightly exceeds your budget ($${ceil}) because we prioritized products that best match your ${userSkinType.toLowerCase()} skin type and your specific concerns. We couldn't find cheaper alternatives that would provide the same quality results while maintaining safety and effectiveness. We recommend keeping this routine for optimal results, but you can adjust your budget if needed.`;
+            EssentialSelector.addUserNote(budgetNote);
         }
 
         return ordered;
