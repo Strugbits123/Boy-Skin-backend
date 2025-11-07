@@ -2,3 +2,4 @@ node_modules
 dist
 .env
 Boy-skin-backend.pem
+products.json

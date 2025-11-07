@@ -87,12 +87,12 @@ export class ValidationUtils {
     }
 
     static isExfoliating(p: Product): boolean {
+        // 🔧 AI.DOC RULE R6 COMPLIANT: Only AHA/BHA/PHA acids and explicit exfoliant terms
         const actives = ProductUtils.extractActives(p);
-        const exfoliants = [
-            "aha", "bha", "glycolic", "salicylic", "lactic", "pha",
-            "azelaic", "retinol", "retinal", "vitamin c", "ascorbic", "sulfur"
+        const aiDocExfoliants = [
+            "aha", "bha", "glycolic", "salicylic", "lactic", "pha"
         ];
-        if (actives.some(a => exfoliants.includes(a))) return true;
+        if (actives.some(a => aiDocExfoliants.includes(a))) return true;
 
         const text = [
             p.productName || "",
@@ -101,15 +101,51 @@ export class ValidationUtils {
             p.format?.name || ""
         ].join(" ").toLowerCase();
 
-        return /exfoliat|peel|resurface|retino(i|l)|azelaic|vitamin\s*c|ascorbic|sulfur/.test(text);
+        // AI.DOC RULE R6: "exfoliant/exfoliating", "peel/peeling", "resurfacing" only
+        return /exfoliat|peel|resurface/.test(text);
     }
 
     static respectsExfoliationWith(selection: Product[], candidate?: Product): boolean {
         const list = candidate ? [...selection, candidate] : selection.slice();
-        const cleanser = list.find(p => ProductUtils.productSteps(p).includes("cleanse"));
-        const cleanserEx = cleanser ? this.isExfoliating(cleanser) : false;
-        const exTreats = list.filter(p => ProductUtils.productSteps(p).some(s => s.includes("treat")) && this.isExfoliating(p));
-        if (cleanserEx) return exTreats.length === 0;
-        return exTreats.length <= 1;
+
+        // 🔧 FIX: Separate cleanser and treatment identification
+        const cleansers = list.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.includes("cleanse") && !steps.some(s => s.includes("treat"));
+        });
+
+        const treatments = list.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.some(s => s.includes("treat")) && !steps.includes("cleanse");
+        });
+
+        // 🔧 FIX: Handle products with multiple steps (cleanse + treat)
+        const multiStepProducts = list.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.includes("cleanse") && steps.some(s => s.includes("treat"));
+        });
+
+        // Count exfoliating products by category
+        const exfoliatingCleansers = cleansers.filter(p => this.isExfoliating(p));
+        const exfoliatingTreatments = treatments.filter(p => this.isExfoliating(p));
+        const exfoliatingMultiStep = multiStepProducts.filter(p => this.isExfoliating(p));
+
+        const totalExfoliating = exfoliatingCleansers.length + exfoliatingTreatments.length + exfoliatingMultiStep.length;
+
+        const candidateName = candidate?.productName || 'Unknown';
+        // console.log(`📋 AI.DOC RULE R6 CHECK: ${candidateName}`);
+        // console.log(`   📊 Cleansers Exfoliating: ${exfoliatingCleansers.length} (${exfoliatingCleansers.map(p => p.productName).join(', ') || 'None'})`);
+        // console.log(`   📊 Treatments Exfoliating: ${exfoliatingTreatments.length} (${exfoliatingTreatments.map(p => p.productName).join(', ') || 'None'})`);
+        // console.log(`   📊 Multi-Step Exfoliating: ${exfoliatingMultiStep.length} (${exfoliatingMultiStep.map(p => p.productName).join(', ') || 'None'})`);
+        // console.log(`   📊 Total Exfoliating: ${totalExfoliating}/1 (AI.DOC Rule R6: MAX 1)`);
+
+        // AI.DOC RULE R6: STRICT - Only ONE exfoliating product in entire routine
+        if (totalExfoliating > 1) {
+            // console.log(`   ❌ RULE R6 VIOLATION: Multiple exfoliating products (${totalExfoliating} > 1)`);
+            return false;
+        }
+
+        // console.log(`   ✅ RULE R6 COMPLIANT: Single exfoliant rule respected`);
+        return true;
     }
 }

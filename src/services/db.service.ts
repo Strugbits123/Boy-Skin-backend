@@ -118,6 +118,7 @@ class DbService {
         // Initial cache load - synchronous
         try {
             const products = await this.getNotionProducts();
+            // console.log(`All Products\n=====================s=================\n\n ${JSON.stringify(products)}`);
             // console.log(products[0]);
             this.cache.products = products;
             this.cache.lastUpdated = new Date();

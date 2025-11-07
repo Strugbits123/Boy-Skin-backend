@@ -93,6 +93,10 @@ export class EssentialSelector {
                 return b.concernScore - a.concernScore;
             });
 
+        // PROPER SPF SELECTION STRATEGY
+        // console.log(`🧴 SPF SELECTION: Combo options: ${scoredCombos.length}, Standalone options: ${scoredSPF.length}`);
+
+        // STEP 1: Try combo moisturizer+SPF first (BEST approach)
         if (scoredCombos.length > 0) {
             const currentSelection = cleanser ? [cleanser] : [];
 
@@ -100,51 +104,45 @@ export class EssentialSelector {
                 if (ConflictDetector.isSafeToAdd(combo.m, currentSelection)) {
                     moisturizer = combo.m;
                     protect = combo.m;
+                    // console.log(`✅ SELECTED COMBO: ${combo.m.productName} (moisturizer + SPF)`);
                     break;
                 }
             }
         }
 
-        if (!moisturizer && !protect && moisturizersNoSPF.length > 0 && scoredSPF.length > 0) {
+        // STEP 2: If no combo found, use separate moisturizer + standalone SPF
+        if (!moisturizer || !protect) {
+            // console.log(`🔄 No combo found, selecting separate moisturizer + SPF`);
+
             const currentSelection = cleanser ? [cleanser] : [];
 
-            for (const m of moisturizersNoSPF) {
-                if (ConflictDetector.isSafeToAdd(m, currentSelection)) {
-                    moisturizer = m;
-                    break;
+            // Select moisturizer first
+            if (!moisturizer && moisturizersNoSPF.length > 0) {
+                for (const m of moisturizersNoSPF) {
+                    if (ConflictDetector.isSafeToAdd(m, currentSelection)) {
+                        moisturizer = m;
+                        // console.log(`✅ SELECTED MOISTURIZER: ${m.productName}`);
+                        break;
+                    }
                 }
             }
 
-            if (moisturizer) {
-                currentSelection.push(moisturizer);
-            }
-            for (const spfItem of scoredSPF) {
-                if (ConflictDetector.isSafeToAdd(spfItem.p, currentSelection)) {
-                    protect = spfItem.p;
-                    break;
-                }
-            }
-        }
-        else if (!moisturizer && moisturizersNoSPF.length > 0) {
-            const currentSelection = cleanser ? [cleanser] : [];
-            for (const m of moisturizersNoSPF) {
-                if (ConflictDetector.isSafeToAdd(m, currentSelection)) {
-                    moisturizer = m;
-                    break;
-                }
-            }
-        }
-        else if (!protect && scoredSPF.length > 0) {
-            const currentSelection = cleanser ? [cleanser] : [];
-            if (moisturizer) currentSelection.push(moisturizer);
+            // Then select standalone SPF
+            if (!protect && scoredSPF.length > 0) {
+                const selectionWithMoisturizer = [...currentSelection];
+                if (moisturizer) selectionWithMoisturizer.push(moisturizer);
 
-            for (const spfItem of scoredSPF) {
-                if (ConflictDetector.isSafeToAdd(spfItem.p, currentSelection)) {
-                    protect = spfItem.p;
-                    break;
+                for (const spfItem of scoredSPF) {
+                    if (ConflictDetector.isSafeToAdd(spfItem.p, selectionWithMoisturizer)) {
+                        protect = spfItem.p;
+                        // console.log(`✅ SELECTED STANDALONE SPF: ${spfItem.p.productName}`);
+                        break;
+                    }
                 }
             }
         }
+
+        // console.log(`🎯 FINAL SPF SELECTION: Moisturizer=${moisturizer?.productName || 'None'}, SPF=${protect?.productName || 'None'}, IsCombo=${moisturizer === protect}`);
 
         if (!cleanser || !moisturizer || !protect) {
             const isSensitive = aiQuiz.skinAssessment.skinSensitivity === "sensitive";
@@ -316,7 +314,8 @@ export class EssentialSelector {
 
             const scored = treatPool
                 .filter(t => {
-                    if (cleanserIsExfoliating && ValidationUtils.isExfoliating(t)) return false;
+                    // 🧪 AI.DOC RULE R6: Use complete exfoliation validation
+                    if (!ValidationUtils.respectsExfoliationWith(currentSelectionForTreatment, t)) return false;
                     if (!ConflictDetector.isSafeToAdd(t, currentSelectionForTreatment)) return false;
                     if (!ProductUtils.productHasSkinType(t, skinType)) return false;
                     return true;

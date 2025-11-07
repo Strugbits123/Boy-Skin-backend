@@ -8,6 +8,7 @@ import { AICompatibleQuizModel } from "../../models/quiz.model";
 import { ProductUtils } from "./utils/ProductUtils";
 import { SPFUtils } from "./utils/SPFUtils";
 import { ValidationUtils } from "./utils/ValidationUtils";
+import { DiversityChecker } from "./utils/DiversityChecker";
 import { ConcernScorer } from "./scoring/ConcernScorer";
 import { CompatibilityEnforcer } from "./compatibility/CompatibilityEnforcer";
 import { ProductCategorizer } from "./selection/ProductCategorizer";
@@ -82,9 +83,13 @@ export class ProductFilter {
 
         filtered = filtered.filter(p => ValidationUtils.passesStrengthFilter(p, skinType));
 
-        const preEssentials = EssentialSelector.ensureEssentials(aiQuiz, filtered, allProducts);
+        // 🎯 SINGLE SPF SELECTION POINT - Only EssentialSelector decides SPF
+        // console.log(`🎯 === CENTRALIZED SPF SELECTION START ===`);
+        const essentials = EssentialSelector.ensureEssentials(aiQuiz, filtered, allProducts);
+        // console.log(`🎯 === CENTRALIZED SPF SELECTION COMPLETE ===`);
 
-        const finalPick = RoutineBuilder.buildRoutineBasics(aiQuiz, filtered, allProducts);
+        // Pass essentials to RoutineBuilder (no duplicate selection)
+        const finalPick = RoutineBuilder.buildRoutineBasics(aiQuiz, filtered, allProducts, essentials);
 
         const adjusted = BudgetManager.enforceBudget(aiQuiz, finalPick, filtered);
 
@@ -92,36 +97,58 @@ export class ProductFilter {
 
         const validation = this.validateEssentials(compatible);
 
-        let final = compatible;
+        // console.log(`🔍 BEFORE DIVERSITY: ${compatible.length} products`);
+        // compatible.forEach((p, i) => console.log(`   ${i + 1}. ${p.productName}`));
+
+        let final = DiversityChecker.ensureDiversity(compatible, aiQuiz, filtered);
+
+        // console.log(`🔍 AFTER DIVERSITY: ${final.length} products`);
+        // final.forEach((p, i) => console.log(`   ${i + 1}. ${p.productName}`));
 
         if (!validation.isValid) {
-            console.error('CRITICAL: Core essentials missing after pipeline!');
-            console.error(`Missing: Cleanser=${!validation.hasCleanser}, Moisturizer=${!validation.hasMoisturizer}, SPF=${!validation.hasProtect}`);
+            // console.error('CRITICAL: Core essentials missing after pipeline!');
+            // console.error(`Missing: Cleanser=${!validation.hasCleanser}, Moisturizer=${!validation.hasMoisturizer}, SPF=${!validation.hasProtect}`);
 
-            const backupEssentials = EssentialSelector.ensureEssentials(aiQuiz, allProducts, allProducts);
+            // 🚨 BACKUP ESSENTIALS - Use ORIGINAL essentials (no duplicate selection!)
+            // console.log(`🚨 BACKUP MODE: Using original essentials instead of creating new ones`);
 
-            if (!validation.hasCleanser && backupEssentials.cleanser) {
-                final.push(backupEssentials.cleanser);
+            if (!validation.hasCleanser && essentials.cleanser) {
+                // console.log(`🔧 Adding backup cleanser: ${essentials.cleanser.productName}`);
+                final.push(essentials.cleanser);
             }
-            if (!validation.hasMoisturizer && backupEssentials.moisturizer) {
-                final.push(backupEssentials.moisturizer);
+            if (!validation.hasMoisturizer && essentials.moisturizer) {
+                // console.log(`🔧 Adding backup moisturizer: ${essentials.moisturizer.productName}`);
+                final.push(essentials.moisturizer);
             }
-            if (!validation.hasProtect && backupEssentials.protect) {
-                const alreadyAdded = final.some((p: Product) => p.productId === backupEssentials.protect?.productId);
+            if (!validation.hasProtect && essentials.protect) {
+                const alreadyAdded = final.some((p: Product) => p.productId === essentials.protect?.productId);
                 if (!alreadyAdded) {
-                    final.push(backupEssentials.protect);
+                    // console.log(`🔧 Adding backup SPF: ${essentials.protect.productName}`);
+                    final.push(essentials.protect);
+                } else {
+                    // console.log(`⚠️ SPF already present, skipping backup`);
                 }
             }
-            if (!validation.hasTreatment && backupEssentials.treatment) {
-                final.push(backupEssentials.treatment);
+            if (!validation.hasTreatment && essentials.treatment) {
+                // console.log(`🔧 Adding backup treatment: ${essentials.treatment.productName}`);
+                final.push(essentials.treatment);
             }
+
+            // 🧹 COMPREHENSIVE DUPLICATE REMOVAL
+            // console.log(`🧹 CLEANING DUPLICATES: Before cleanup: ${final.length} products`);
+            // final.forEach((p, index) => console.log(`   ${index + 1}. ${p.productName}`));
 
             const seen = new Set<string>();
             final = final.filter((p: Product) => {
-                if (seen.has(p.productId)) return false;
+                if (seen.has(p.productId)) {
+                    // console.log(`❌ REMOVED DUPLICATE: ${p.productName}`);
+                    return false;
+                }
                 seen.add(p.productId);
                 return true;
             });
+
+            // console.log(`✅ AFTER CLEANUP: ${final.length} products remaining`);
 
             const totalCost = ProductUtils.totalCost(final);
             const { ceil } = BudgetManager.getBudgetBounds(aiQuiz);
@@ -154,9 +181,22 @@ export class ProductFilter {
             const byCat = ProductCategorizer.bucketByCategory(safePool.filter((p: Product) => !existingIds.has(p.productId)));
             const addables: Product[] = [];
 
+            // 🚨 CHECK: Don't add SPF if already exists
+            const hasSPF = final.some(p => {
+                const steps = ProductUtils.productSteps(p);
+                return steps.includes("protect") && SPFUtils.passesSpfQuality(p);
+            });
+
             for (const p of byCat.protects) {
                 if (addables.length >= need) break;
                 if (!SPFUtils.passesSpfQuality(p)) continue;
+
+                if (hasSPF) {
+                    // console.log(`🚫 BLOCKED ADDITIONAL SPF: ${p.productName} (SPF already exists)`);
+                    continue; // Skip SPF if already have one
+                }
+
+                // console.log(`➕ ADDING BACKUP SPF: ${p.productName}`);
                 addables.push(p);
             }
             for (const m of byCat.moisturizers) {
@@ -170,7 +210,35 @@ export class ProductFilter {
             final = [...final, ...addables.slice(0, need)];
         }
 
-        const ordered = CompatibilityEnforcer.finalSort(aiQuiz, final);
+        let ordered = CompatibilityEnforcer.finalSort(aiQuiz, final);
+
+        // FINAL SPF DEDUPLICATION - Remove duplicate SPFs after ALL pipeline steps
+        const spfProducts = ordered.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.includes("protect") && SPFUtils.passesSpfQuality(p);
+        });
+
+        if (spfProducts.length > 1) {
+            // console.log(`🚨 CRITICAL BUG: Centralized SPF selection failed! This should NOT happen!`);
+            // console.log(`🚨 FOUND ${spfProducts.length} SPF PRODUCTS - EMERGENCY CLEANUP:`);
+            // spfProducts.forEach((spf, index) => console.log(`   ${index + 1}. ${spf.productName}`));
+
+            // Keep only the first SPF and remove others
+            const keepSPF = spfProducts[0];
+            const removeSPF = spfProducts.slice(1);
+
+            ordered = ordered.filter(p => {
+                const shouldRemove = removeSPF.some(spf => spf.productId === p.productId);
+                if (shouldRemove) {
+                    // console.log(`❌ REMOVING DUPLICATE SPF: ${p.productName}`);
+                }
+                return !shouldRemove;
+            });
+
+            if (keepSPF) {
+                // console.log(`✅ KEPT SINGLE SPF: ${keepSPF.productName}`);
+            }
+        }
 
         const finalValidation = this.validateEssentials(ordered);
 

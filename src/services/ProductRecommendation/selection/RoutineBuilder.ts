@@ -16,26 +16,37 @@ export class RoutineBuilder {
     static buildRoutineBasics(
         aiQuiz: AICompatibleQuizModel,
         filtered: Product[],
-        allProducts: Product[]
+        allProducts: Product[],
+        essentials?: { cleanser: Product | null; moisturizer: Product | null; protect: Product | null; treatment: Product | null }
     ): Product[] {
-        const essentials = EssentialSelector.ensureEssentials(aiQuiz, filtered, allProducts);
+        // Use passed essentials or create new ones (only if not provided)
+        const finalEssentials = essentials || EssentialSelector.ensureEssentials(aiQuiz, filtered, allProducts);
+
+        // console.log(`🏗️ ROUTINE BUILDER: Using ${essentials ? 'PASSED' : 'NEW'} essentials`);
 
         const essentialProducts: Product[] = [];
-        if (essentials.cleanser) essentialProducts.push(essentials.cleanser);
-        if (essentials.moisturizer) essentialProducts.push(essentials.moisturizer);
-        if (essentials.protect) essentialProducts.push(essentials.protect);
-        if (essentials.treatment) essentialProducts.push(essentials.treatment);
+        if (finalEssentials.cleanser) essentialProducts.push(finalEssentials.cleanser);
+        if (finalEssentials.moisturizer) essentialProducts.push(finalEssentials.moisturizer);
+        if (finalEssentials.protect && finalEssentials.protect !== finalEssentials.moisturizer) {
+            essentialProducts.push(finalEssentials.protect);
+        }
+
+        let treatmentsAdded = 0;
+        if (finalEssentials.treatment) {
+            essentialProducts.push(finalEssentials.treatment);
+            treatmentsAdded++;
+        }
 
         const buckets = ProductCategorizer.bucketByCategory(filtered);
         const allowEye = aiQuiz.concerns.primary.includes("dark circles") || aiQuiz.concerns.secondary.includes("dark circles");
         const treatPool = buckets.treats.filter(t => allowEye ? true : !ProductUtils.isEyeProduct(t));
 
-        const essentialTreatmentId = essentials.treatment?.productId;
+        const essentialTreatmentId = finalEssentials.treatment?.productId;
         const additionalTreatPool = treatPool.filter(t => t.productId !== essentialTreatmentId);
 
         let pickTreats = TreatmentScorer.selectConcernTreatments(aiQuiz, additionalTreatPool, essentialProducts);
 
-        const chosenCleanser = essentials.cleanser;
+        const chosenCleanser = finalEssentials.cleanser;
         if (chosenCleanser && ValidationUtils.isExfoliating(chosenCleanser)) {
             pickTreats = pickTreats.filter(t => !ValidationUtils.isExfoliating(t));
         } else {
@@ -46,6 +57,10 @@ export class RoutineBuilder {
                     pickTreats = pickTreats.filter(t => !ValidationUtils.isExfoliating(t) || t.productId === firstEx.productId);
                 }
             }
+        }
+
+        if (treatmentsAdded === 0 && pickTreats.length === 0) {
+            EssentialSelector.addUserNote("Note: We couldn't include a treatment product in your routine because we couldn't find one that matches your skin type and addresses your specific concerns safely. We've prioritized your core essentials (cleanser, moisturizer, and SPF) to ensure the best results without compromising on quality or safety.");
         }
 
         const finalPick: Product[] = [];

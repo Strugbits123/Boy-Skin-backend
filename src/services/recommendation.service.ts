@@ -366,7 +366,11 @@ class RecommendationService {
                 }
 
                 const userSkin = aiQuiz.skinAssessment.skinType;
-                const isSensitive = aiQuiz.skinAssessment.skinSensitivity === 'sensitive';
+                const skinSensitivity = aiQuiz.skinAssessment.skinSensitivity || '';
+                const isSensitive = skinSensitivity.toLowerCase() === 'sensitive' ||
+                    skinSensitivity.toLowerCase() === 'very sensitive';
+
+                // console.log(`Skin sensitivity check: "${skinSensitivity}" → isSensitive: ${isSensitive}`);
 
                 const relevantTips = getRelevantTips(userSkin, isSensitive, filteredCandidates);
 

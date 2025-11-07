@@ -90,14 +90,21 @@ export class ProductUtils {
         const primary = this.getPrimaryActivesText(p) || "";
         const full = p.ingredientList?.plain_text || "";
         const base = (primary + "\n" + full).toLowerCase();
+
+        // 🔧 EXACT INGREDIENT MATCHING: Use word boundaries to prevent false positives
         const tokens = [
             "retinol", "retinal", "retinoid",
-            "benzoyl peroxide", "salicylic", "bha", "glycolic", "aha", "lactic", "pha",
-            "azelaic", "sulfur", "vitamin c", "ascorbic",
-            "niacinamide", "hyaluronic", "ceramide", "ceramides", "peptide", "zinc oxide",
+            "benzoyl peroxide", "salicylic acid", "bha", "glycolic acid", "aha", "lactic acid", "pha",
+            "azelaic acid", "sulfur", "vitamin c", "ascorbic acid",
+            "niacinamide", "hyaluronic acid", "ceramide", "ceramides", "peptide", "zinc oxide",
             "fragrance", "alcohol"
         ];
-        return tokens.filter(t => base.includes(t));
+
+        return tokens.filter(token => {
+            // Create word boundary regex for exact matching
+            const regex = new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+            return regex.test(base);
+        });
     }
 
     static isSensitiveSafe(p: Product): boolean {
