@@ -27,7 +27,7 @@ Patient Profile Fields
 
 
 Demographics:
-- Age: "18-25" | "25-35" | "35-45" | "45+"
+- Age: "13-17" | "18-24" | "25-34" | "35-44" | "45-54" | "55+"
 - Name: [String]
 
 

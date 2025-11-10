@@ -91,30 +91,135 @@ export class ProductUtils {
         const full = p.ingredientList?.plain_text || "";
         const base = (primary + "\n" + full).toLowerCase();
 
-        // 🔧 EXACT INGREDIENT MATCHING: Use word boundaries to prevent false positives
-        const tokens = [
-            "retinol", "retinal", "retinoid",
-            "benzoyl peroxide", "salicylic acid", "bha", "glycolic acid", "aha", "lactic acid", "pha",
-            "azelaic acid", "sulfur", "vitamin c", "ascorbic acid",
-            "niacinamide", "hyaluronic acid", "ceramide", "ceramides", "peptide", "zinc oxide",
-            "fragrance", "alcohol"
+        // AI.doc Phase 4: Ingredient effectiveness matrix with priority order
+        const activeIngredients = [
+            // Acne treatment (highest effectiveness)
+            "salicylic acid", "bha", "benzoyl peroxide", "retinol", "retinal", "retinoid",
+            "azelaic acid", "sulfur", "niacinamide",
+
+            // Texture improvement  
+            "glycolic acid", "lactic acid", "aha", "pha",
+
+            // Anti-aging powerhouses
+            "vitamin c", "ascorbic acid", "peptide", "peptides",
+
+            // Hydration heroes
+            "hyaluronic acid", "sodium hyaluronate", "ceramide", "ceramides",
+
+            // Protection essentials
+            "zinc oxide", "titanium dioxide",
+
+            // Potentially problematic (need careful handling)
+            "fragrance", "alcohol", "parfum"
         ];
 
-        return tokens.filter(token => {
-            // Create word boundary regex for exact matching
-            const regex = new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-            return regex.test(base);
-        });
+        const foundActives: string[] = [];
+
+        for (const ingredient of activeIngredients) {
+            // Use expanded variants for better matching
+            const variants = this.expandIngredientVariants(ingredient);
+
+            for (const variant of variants) {
+                // Create word boundary regex for exact matching
+                const regex = new RegExp(`\\b${variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                if (regex.test(base)) {
+                    // Add the standardized name, not the variant
+                    if (!foundActives.includes(ingredient)) {
+                        foundActives.push(ingredient);
+                    }
+                    break; // Move to next ingredient after first match
+                }
+            }
+        }
+
+        return foundActives;
     }
 
     static isSensitiveSafe(p: Product): boolean {
-        const name = p.sensitiveSkinFriendly?.name?.toLowerCase() || "";
-        return ["yes", "true", "y", "safe"].some(v => name.includes(v));
+        const name = (p.sensitiveSkinFriendly?.name || "").toLowerCase().trim();
+
+        // If product explicitly marked as safe for sensitive skin
+        if (["yes", "true", "y", "safe"].some(v => name.includes(v))) {
+            return true;
+        }
+
+        // If product has no sensitive skin marking, check for gentle ingredients
+        if (!name || name === "" || name === "unknown") {
+            // Allow products with gentle ingredients for sensitive skin
+            const gentleIngredients = [
+                "hyaluronic acid", "ceramide", "peptide", "niacinamide",
+                "azelaic acid", "zinc oxide", "titanium dioxide"
+            ];
+
+            const productText = [
+                this.getPrimaryActivesText(p),
+                p.ingredientList?.plain_text || "",
+                p.summary?.plain_text || ""
+            ].join(" ").toLowerCase();
+
+            // Allow if contains gentle ingredients and no harsh actives
+            const hasGentle = gentleIngredients.some(ing => productText.includes(ing));
+            const hasHarsh = [
+                "benzoyl peroxide", "glycolic acid", "lactic acid",
+                "retinol", "retinoid", "salicylic acid"
+            ].some(harsh => productText.includes(harsh));
+
+            // For sensitive users, prefer products with gentle ingredients
+            return hasGentle || !hasHarsh;
+        }
+
+        // If explicitly marked as "no" for sensitive skin
+        return !["no", "false", "not recommended"].some(v => name.includes(v));
     }
 
     static productHasSkinType(p: Product, skinType: string): boolean {
-        const st = (skinType || "").toLowerCase();
-        return (p.skinType || []).some(s => (s.name || "").toLowerCase().includes(st));
+        const st = (skinType || "").toLowerCase().trim();
+
+        // AI.doc Phase 2: Skin Type Matching Rules
+        // Rule T1: Exact primary skin type match gets score 10
+        // Rule T2: Compatible secondary types get score 8  
+        // Rule T3: Neutral/all-skin products get score 6
+        // Rule T4: Incompatible types get score 0
+
+        const productSkinTypes = (p.skinType || []).map(s => (s.name || "").toLowerCase().trim());
+
+        if (productSkinTypes.length === 0) {
+            // Products without skin type specified - assume neutral/all-skin (Rule T3)
+            return true;
+        }
+
+        // Rule T1: Direct exact match
+        if (productSkinTypes.some(pst => pst === st)) {
+            return true;
+        }
+
+        // Rule T2: Compatible combinations based on AI.doc matrix
+        const compatibilityMap: { [key: string]: string[] } = {
+            "oily": ["combination", "acne-prone", "all skin types", "normal to oily"],
+            "dry": ["combination", "sensitive", "all skin types", "normal to dry", "mature"],
+            "combination": ["oily", "normal", "all skin types"],
+            "normal": ["combination", "all skin types"],
+            "sensitive": ["dry", "all skin types", "gentle"],
+            "acne-prone": ["oily", "combination", "all skin types"]
+        };
+
+        const compatibleTypes = compatibilityMap[st] || [];
+        if (productSkinTypes.some(pst => compatibleTypes.includes(pst))) {
+            return true;
+        }
+
+        // Rule T3: Universal products (all skin types, unspecified)
+        if (productSkinTypes.some(pst =>
+            pst.includes("all skin") ||
+            pst.includes("universal") ||
+            pst === "neutral" ||
+            pst === ""
+        )) {
+            return true;
+        }
+
+        // Rule T4: Incompatible - reject
+        return false;
     }
 
     static normalizeStepCategory(rawStep: string): string[] {

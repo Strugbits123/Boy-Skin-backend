@@ -10,7 +10,7 @@ export interface QuizModel {
     wakeUpSkinType: string;
     skinSensitivity: string;
     work_on: string;
-    work_on_acne : string;
+    work_on_acne: string;
     Budget: string;
     routine_time: string;
     additional_info: string;
@@ -21,7 +21,7 @@ export interface QuizModel {
 
 export interface AICompatibleQuizModel {
     demographics: {
-        age: "18-25" | "25-35" | "35-45" | "45+";
+        age: "13-17" | "18-24" | "25-34" | "35-44" | "45-54" | "55+";
         name: string;
     };
     skinAssessment: {

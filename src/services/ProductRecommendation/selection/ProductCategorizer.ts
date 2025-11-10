@@ -17,13 +17,17 @@ export class ProductCategorizer {
         for (const p of products) {
             const steps = ProductUtils.productSteps(p);
 
+            // Use independent checks instead of else-if chain to allow multi-function products
             if (steps.some(s => s.includes("cleanse"))) {
                 cleansers.push(p);
-            } else if (steps.some(s => s.includes("moistur"))) {
+            }
+            if (steps.some(s => s.includes("moistur"))) {
                 moisturizers.push(p);
-            } else if (steps.some(s => s.includes("protect") || s.includes("spf"))) {
+            }
+            if (steps.some(s => s.includes("protect") || s.includes("spf"))) {
                 protects.push(p);
-            } else if (steps.some(s => s.includes("treat") || s.includes("serum") || s.includes("active"))) {
+            }
+            if (steps.some(s => s.includes("treat") || s.includes("serum") || s.includes("active"))) {
                 treats.push(p);
             }
         }

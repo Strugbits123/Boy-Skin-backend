@@ -1,140 +1,191 @@
 /**
  * Test Data Injection Service
- * Injects sample user data and validates recommendation system on server startup
+ * Client-provided test cases for recommendation system validation
  */
 
 import RecommendationService from "./recommendation.service";
 import { QuizModel } from "../models/quiz.model";
 import { RecommendationResponse, ProductRecommendation } from "../models/recommendation.model";
 
-interface TestUserProfile {
+interface ClientTestCase {
     name: string;
     email: string;
     age: string;
     skinType: string;
     skinSensitivity: string;
+    acneStatus: string;
     concerns: string[];
     budget: string;
     routineTime: string;
     expectedProducts: string[];
+    testCaseId: string;
 }
 
 class TestDataService {
 
-    private static readonly TEST_PROFILES: TestUserProfile[] = [
+    // Client-provided test cases
+    private static readonly CLIENT_TEST_CASES: ClientTestCase[] = [
         {
-            name: "Sarah Chen",
-            email: "sarah.test@example.com",
+            name: "Test Case 1",
+            email: "test1@example.com",
             age: "18-24",
-            skinType: "Combination",
-            skinSensitivity: "Sensitive",
-            concerns: ["acne", "texture", "hyperpigmentation", "redness"],
+            skinType: "combination",
+            skinSensitivity: "sensitive",
+            acneStatus: "active acne",
+            concerns: ["texture", "hyperpigmentation", "redness"],
             budget: "110",
-            routineTime: "ten_minute",
+            routineTime: "10_minute",
             expectedProducts: [
                 "Cosmic Dew Gel to Foam Water Cleanser",
                 "Redness Relief Azelaic Acid Serum",
                 "Salmon DNA PDRN Peptide Serum",
                 "UV Clear Face Sunscreen SPF 46"
-            ]
+            ],
+            testCaseId: "CLIENT_TC_001"
         },
         {
-            name: "Michael Rodriguez",
-            email: "michael.test@example.com",
+            name: "Test Case 2",
+            email: "test2@example.com",
             age: "25-34",
-            skinType: "Oily",
-            skinSensitivity: "Normal",
-            concerns: ["active acne", "hyperpigmentation", "texture", "large pores", "fine lines"],
+            skinType: "oily",
+            skinSensitivity: "not sensitive",
+            acneStatus: "active acne",
+            concerns: ["hyperpigmentation", "texture", "pores", "fine lines"],
             budget: "160",
-            routineTime: "fifteen_minute",
+            routineTime: "15+_minute",
             expectedProducts: [
                 "Cerave Foaming Facial Cleanser",
                 "Iope Retinol Superbounce",
                 "The Ordinary Niacinamide 10% + Zinc 1%",
                 "Order of the Eclipse Hyaluronic Cream",
                 "Supergoop Unseen Sunscreen"
-            ]
+            ],
+            testCaseId: "CLIENT_TC_002"
         },
         {
-            name: "Emma Thompson",
-            email: "emma.test@example.com",
+            name: "Test Case 3",
+            email: "test3@example.com",
             age: "35-44",
-            skinType: "Dry",
-            skinSensitivity: "Sensitive",
-            concerns: ["fine lines", "dryness", "dullness", "dark circles"],
-            budget: "120",
-            routineTime: "ten_minute",
+            skinType: "dry",
+            skinSensitivity: "not sensitive",
+            acneStatus: "not active acne",
+            concerns: ["texture", "pores", "fine lines", "dark circles", "dryness", "dullness"],
+            budget: "200",
+            routineTime: "15+_minute",
             expectedProducts: [
-                "Pure Clean Daily Facial Cleanser",
-                "Relief Sun: Rice + Probiotic SPF50",
-                "Retinol Serum",
-                "Hyaluronic Acid Moisturizer"
-            ]
+                "Cerave Hydrating Gel Cleanser",
+                "Strive Anti-aging retinal serum",
+                "Peach & Lily Glass Skin Refining Serum",
+                "First Aid Beauty Ultra Repair Cream Intense Hydration",
+                "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++"
+            ],
+            testCaseId: "CLIENT_TC_003"
         },
         {
-            name: "James Wilson",
-            email: "james.test@example.com",
-            age: "45-54",
-            skinType: "Normal",
-            skinSensitivity: "Normal",
-            concerns: ["anti-aging", "hyperpigmentation", "dullness"],
-            budget: "200",
-            routineTime: "fifteen_minute",
+            name: "Test Case 4",
+            email: "test4@example.com",
+            age: "18-24",
+            skinType: "combination",
+            skinSensitivity: "sensitive",
+            acneStatus: "active acne",
+            concerns: ["pores", "hyperpigmentation", "redness"],
+            budget: "0", // No budget specified
+            routineTime: "5_minute",
             expectedProducts: [
-                "Gentle Foaming Cleanser",
-                "Vitamin C Serum",
-                "Retinol Treatment",
-                "Anti-Aging Moisturizer",
-                "Broad Spectrum SPF 50"
-            ]
+                "Prequelskin Gleanser Non-Drying Glycerin Cleanser",
+                "Peach Slices Redness Relief Azelaic Acid Serum",
+                "Beauty of Joseon Relief Sun: Rice + Probiotic SPF50"
+            ],
+            testCaseId: "CLIENT_TC_004"
         }
     ];
 
     /**
-     * Runs automated testing of recommendation system with sample profiles
+     * Runs client test cases validation
      */
-    static async runStartupTests(): Promise<void> {
-        console.log('\n🧪 RUNNING STARTUP RECOMMENDATION TESTS...\n');
+    static async runClientTestCases(): Promise<void> {
+        console.log('\n🎯 RUNNING CLIENT TEST CASES...\n');
+        console.log('='.repeat(80));
 
-        for (let i = 0; i < this.TEST_PROFILES.length; i++) {
-            const profile = this.TEST_PROFILES[i];
-            if (!profile) continue;
+        for (let i = 0; i < this.CLIENT_TEST_CASES.length; i++) {
+            const testCase = this.CLIENT_TEST_CASES[i];
+            if (!testCase) continue;
 
-            console.log(`\n📋 Testing Profile ${i + 1}: ${profile.name}`);
-            console.log(`Age: ${profile.age} | Skin: ${profile.skinType} | Sensitivity: ${profile.skinSensitivity}`);
-            console.log(`Concerns: ${profile.concerns.join(', ')}`);
-            console.log(`Budget: $${profile.budget} | Time: ${profile.routineTime}`);
+            console.log(`\n📋 ${testCase.testCaseId}: ${testCase.name}`);
+            console.log(`Age: ${testCase.age} | Skin: ${testCase.skinType} | Sensitivity: ${testCase.skinSensitivity}`);
+            console.log(`Acne Status: ${testCase.acneStatus} | Concerns: ${testCase.concerns.join(', ')}`);
+            console.log(`Budget: $${testCase.budget} | Time: ${testCase.routineTime}`);
+            console.log(`Expected Products: ${testCase.expectedProducts.length}`);
+            testCase.expectedProducts.forEach((prod, idx) => {
+                console.log(`  ${idx + 1}. ${prod}`);
+            });
 
             try {
-                const testQuiz = this.createTestQuiz(profile);
-                const recommendations = await RecommendationService.getRecommendedProduct(testQuiz);
+                const testQuiz = this.createClientTestQuiz(testCase);
+                const recommendations = await RecommendationService.getFinalProduct(testQuiz);
 
-                if (recommendations.success) {
-                    console.log(`✅ SUCCESS - Generated ${recommendations.products?.length || 0} products`);
+                if (recommendations) {
+                    console.log(`\n✅ SYSTEM OUTPUT:`);
                     console.log(`💰 Total Cost: $${recommendations.totalCost || 0}`);
 
-                    const productNames = recommendations.products?.map((p: ProductRecommendation) => p.productName) || [];
-                    console.log(`📦 Products: ${productNames.join(', ')}`);
+                    if (recommendations.products && recommendations.products.length > 0) {
+                        console.log(`📦 Recommended Products (${recommendations.products.length}):`);
+                        recommendations.products.forEach((product, idx) => {
+                            console.log(`  ${idx + 1}. ${product.productName} - $${product.price || 0}`);
+                        });
 
-                    const tipCount = recommendations.tips?.length || 0;
-                    console.log(`💡 Tips Generated: ${tipCount}`);
+                        // Validate against client expectations
+                        const actualProducts = recommendations.products.map(p => p.productName);
+                        const matchingProducts = testCase.expectedProducts.filter(expected =>
+                            actualProducts.some(actual =>
+                                actual.toLowerCase().includes(expected.toLowerCase()) ||
+                                expected.toLowerCase().includes(actual.toLowerCase())
+                            )
+                        );
 
-                    // Validate essential categories
-                    const hasCleanser = productNames.some((name: string) => name.toLowerCase().includes('clean'));
-                    const hasSPF = productNames.some((name: string) => name.toLowerCase().includes('spf') || name.toLowerCase().includes('sun'));
-                    const hasTreatment = recommendations.products?.some((p: ProductRecommendation) => {
-                        const name = p.productName?.toLowerCase() || '';
-                        return name.includes('serum') || name.includes('retinol') || name.includes('acid') || name.includes('treatment');
-                    });
+                        console.log(`\n🔍 VALIDATION:`);
+                        console.log(`Expected: ${testCase.expectedProducts.length} products`);
+                        console.log(`Got: ${actualProducts.length} products`);
+                        console.log(`Matches: ${matchingProducts.length} products`);
 
-                    console.log(`🔍 Validation: Cleanser=${hasCleanser} | SPF=${hasSPF} | Treatment=${hasTreatment}`);
+                        if (matchingProducts.length > 0) {
+                            console.log(`✅ Matching products:`);
+                            matchingProducts.forEach(match => console.log(`  - ${match}`));
+                        }
 
-                    if (!hasCleanser || !hasSPF) {
-                        console.log(`⚠️  WARNING: Missing essential categories!`);
+                        const accuracy = (matchingProducts.length / testCase.expectedProducts.length) * 100;
+                        console.log(`📊 Accuracy: ${accuracy.toFixed(1)}%`);
+
+                        // Validate essentials - improved detection for combo products
+                        const hasCleanser = actualProducts.some(name =>
+                            name.toLowerCase().includes('cleanser') || name.toLowerCase().includes('wash'));
+                        const hasMoisturizer = actualProducts.some(name => {
+                            const lowerName = name.toLowerCase();
+                            return lowerName.includes('moistur') || lowerName.includes('cream') ||
+                                lowerName.includes('hydrat') || lowerName.includes('watery') ||
+                                lowerName.includes('gel') || lowerName.includes('lotion');
+                        });
+                        const hasSPF = actualProducts.some(name =>
+                            name.toLowerCase().includes('spf') || name.toLowerCase().includes('sun'));
+
+                        console.log(`�️ Safety Check: Cleanser=${hasCleanser} | Moisturizer=${hasMoisturizer} | SPF=${hasSPF}`);
+
+                        if (recommendations.clinicalReasoning) {
+                            console.log(`💡 Clinical Reasoning: ${recommendations.clinicalReasoning.substring(0, 100)}...`);
+                        }
+
+                        if (accuracy >= 50) {
+                            console.log(`🎉 TEST PASSED (${accuracy.toFixed(1)}% match)`);
+                        } else {
+                            console.log(`⚠️ TEST NEEDS REVIEW (${accuracy.toFixed(1)}% match)`);
+                        }
+
+                    } else {
+                        console.log(`❌ No products recommended`);
                     }
 
                 } else {
-                    console.log(`❌ FAILED: Recommendation failed`);
+                    console.log(`❌ FAILED: No recommendations generated`);
                 }
 
             } catch (error) {
@@ -144,26 +195,32 @@ class TestDataService {
             console.log('─'.repeat(80));
         }
 
-        console.log('\n🎯 STARTUP TESTS COMPLETED!\n');
+        console.log('\n🎯 CLIENT TEST CASES COMPLETED!\n');
     }
 
     /**
-     * Creates a test quiz object from user profile
+     * Creates a test quiz object from client test case
      */
-    private static createTestQuiz(profile: TestUserProfile): QuizModel {
+    private static createClientTestQuiz(testCase: ClientTestCase): QuizModel {
+        // Handle budget conversion
+        let budgetValue = testCase.budget;
+        if (budgetValue === "0" || !budgetValue) {
+            budgetValue = "100"; // Default budget for no budget cases
+        }
+
         return {
-            Name: profile.name,
-            Email: profile.email,
-            Age: profile.age,
+            Name: testCase.name,
+            Email: testCase.email,
+            Age: testCase.age,
             Gender: "Other",
             Country: "US",
-            wakeUpSkinType: `${profile.skinType} Skin`,
-            skinSensitivity: `${profile.skinSensitivity} Skin`,
-            work_on: profile.concerns.join(', '),
-            work_on_acne: profile.concerns.includes('acne') ? 'Yes' : 'No',
-            Budget: profile.budget,
-            routine_time: profile.routineTime,
-            additional_info: "Test user for system validation",
+            wakeUpSkinType: testCase.skinType,
+            skinSensitivity: testCase.skinSensitivity,
+            work_on: testCase.concerns.join(', '),
+            work_on_acne: testCase.acneStatus,
+            Budget: budgetValue,
+            routine_time: testCase.routineTime,
+            additional_info: `Client test case: ${testCase.testCaseId}`,
             terms_accepted: "true",
             newsletter_option: "false"
         };
@@ -174,13 +231,13 @@ class TestDataService {
      */
     static async quickHealthCheck(): Promise<boolean> {
         try {
-            const testProfile = this.TEST_PROFILES[0];
-            if (!testProfile) return false;
+            const testCase = this.CLIENT_TEST_CASES[0];
+            if (!testCase) return false;
 
-            const testQuiz = this.createTestQuiz(testProfile);
-            const result = await RecommendationService.getRecommendedProduct(testQuiz);
+            const testQuiz = this.createClientTestQuiz(testCase);
+            const result = await RecommendationService.getFinalProduct(testQuiz);
 
-            return result.success && (result.products?.length || 0) >= 3;
+            return result !== null && (result.products?.length || 0) >= 3;
         } catch (error) {
             console.error('❌ Health check failed:', error);
             return false;

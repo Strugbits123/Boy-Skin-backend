@@ -50,7 +50,7 @@ export class ValidationUtils {
     static violatesSafety(p: Product, aiQuiz: AICompatibleQuizModel): boolean {
         const actives = ProductUtils.extractActives(p);
 
-        const under25 = aiQuiz.demographics.age === "18-25";
+        const under25 = aiQuiz.demographics.age === "18-24" || aiQuiz.demographics.age === "13-17";
         if (under25 && (actives.includes("retinol") || actives.includes("retinal") || actives.includes("retinoid"))) return true;
 
         const hasPreg = aiQuiz.safetyInformation.medicalConditions.includes("pregnant");

@@ -161,11 +161,10 @@ class ValidationService {
         const mapSkinType = (type: string): "dry" | "oily" | "combination" | "normal" => {
             const normalized = type.toLowerCase().trim();
 
-            // Comprehensive skin type mapping
+            // Comprehensive skin type mapping - EXACT MATCH ONLY
             if (normalized.includes("dry")) return "dry";
             if (normalized.includes("oily")) return "oily";
             if (normalized.includes("combination")) return "combination";
-            if (normalized.includes("sensitive")) return "normal"; // Map sensitive to normal for now
             if (normalized.includes("normal")) return "normal";
 
             // Default fallback
@@ -190,27 +189,31 @@ class ValidationService {
             return "not sensitive";
         };
 
-        // Enhanced age mapping with better range detection
-        const mapAge = (age: string): "18-25" | "25-35" | "35-45" | "45+" => {
-            // Handle range formats like "30-35", "25-30", etc.
+        // Enhanced age mapping with correct ranges per screenshot
+        const mapAge = (age: string): "13-17" | "18-24" | "25-34" | "35-44" | "45-54" | "55+" => {
+            // Handle range formats like "18-24", "25-34", etc.
             const rangeMatch = age.match(/(\d+)-(\d+)/);
             if (rangeMatch) {
                 const startAge = parseInt(rangeMatch[1] || "0");
                 const endAge = parseInt(rangeMatch[2] || "0");
                 const avgAge = (startAge + endAge) / 2;
 
-                if (avgAge >= 18 && avgAge <= 25) return "18-25";
-                if (avgAge > 25 && avgAge <= 35) return "25-35";
-                if (avgAge > 35 && avgAge <= 45) return "35-45";
-                return "45+";
+                if (avgAge >= 13 && avgAge <= 17) return "13-17";
+                if (avgAge >= 18 && avgAge <= 24) return "18-24";
+                if (avgAge >= 25 && avgAge <= 34) return "25-34";
+                if (avgAge >= 35 && avgAge <= 44) return "35-44";
+                if (avgAge >= 45 && avgAge <= 54) return "45-54";
+                return "55+";
             }
 
             // Handle single age numbers
             const ageNum = parseInt(age);
-            if (ageNum >= 18 && ageNum <= 25) return "18-25";
-            if (ageNum > 25 && ageNum <= 35) return "25-35";
-            if (ageNum > 35 && ageNum <= 45) return "35-45";
-            return "45+";
+            if (ageNum >= 13 && ageNum <= 17) return "13-17";
+            if (ageNum >= 18 && ageNum <= 24) return "18-24";
+            if (ageNum >= 25 && ageNum <= 34) return "25-34";
+            if (ageNum >= 35 && ageNum <= 44) return "35-44";
+            if (ageNum >= 45 && ageNum <= 54) return "45-54";
+            return "55+";
         };
 
         // Enhanced time commitment mapping

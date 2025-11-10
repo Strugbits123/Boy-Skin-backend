@@ -14,21 +14,21 @@ class AppStarterService {
         // Start cache update cron
         await DbService.startCacheUpdateCron();
 
-        // Run automated system tests
-        // console.log('🧪 Running startup validation tests...');
+        // Run client test cases validation
+        // console.log('🧪 Running client test cases validation...');
         // try {
-        //     await TestDataService.runStartupTests();
-        //     console.log('✅ All startup tests passed! System is ready.');
+        //     await TestDataService.runClientTestCases();
+        //     console.log('✅ Client test cases validation completed!');
         // } catch (error) {
-        //     console.error('❌ Startup tests failed:', error);
+        //     console.error('❌ Client test cases failed:', error);
         //     console.log('⚠️  Server will continue but recommendations may have issues.');
         // }
 
-        // Quick health check
+        // // Quick health check
         // console.log('🔍 Running quick health check...');
         // try {
-        //     await TestDataService.quickHealthCheck();
-        //     console.log('✅ Health check passed! Core services operational.');
+        //     const healthStatus = await TestDataService.quickHealthCheck();
+        //     console.log(`🏥 System health check: ${healthStatus ? 'PASSED' : 'FAILED'}`);
         // } catch (error) {
         //     console.error('❌ Health check failed:', error);
         // }
