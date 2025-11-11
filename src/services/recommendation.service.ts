@@ -5,6 +5,7 @@ import { ProductRecommendation, RecommendationResponse } from "../models/recomme
 import ProductFilter from "./ProductRecommendation/ProductFilter";
 import { RetryConfig, QueuedRequest } from "../models/ai.models";
 import { getRelevantTips } from "../config/tips.config";
+import Product from "../models/product.model";
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -30,6 +31,23 @@ class RecommendationService {
     // Cached docs content
     private static cachedDocsContent: string | null = null;
 
+    // Product sorting order based on format.name (Client's skincare routine sequence)
+    private static getProductOrder(product: Product): number {
+        const format = (product.format?.name || "").toLowerCase();
+        const productName = (product.productName || "").toLowerCase();
+
+        if (format.includes("cleanser")) return 1;
+        if (format.includes("toner")) return 2;
+        if (format.includes("serum")) return 3;
+        if (format.includes("mask")) return 4;
+        if (format.includes("eye cream") || format.includes("eye gel") ||
+            (productName.includes("eye") && (format.includes("cream") || format.includes("gel")))) return 5;
+        if (format.includes("cream") || format.includes("moisturizer") || format.includes("lotion")) return 6;
+        if (format.includes("sunscreen") || format.includes("spf")) return 7;
+        if (format.includes("spray") || format.includes("mist")) return 8;
+
+        return 10;
+    }
 
     // Read and parse AI.doc.md from project root
     private static getAIDocumentation(): string {
@@ -370,12 +388,33 @@ class RecommendationService {
                     });
                 }
 
+                const sortedByFormat = filteredCandidates.map(p => ({
+                    product: p,
+                    order: this.getProductOrder(p)
+                })).sort((a, b) => a.order - b.order);
+
+                const sortedProducts = sortedByFormat.map(item => item.product);
+
+                enhancedProducts.length = 0;
+                totalCost = 0;
+                for (const p of sortedProducts) {
+                    const price = p.price || 0;
+                    totalCost += price;
+                    enhancedProducts.push({
+                        productId: p.productId,
+                        productName: p.productName || 'Unknown Product',
+                        targetConcern: primaryConcern,
+                        priority: 'primary',
+                        routineStep: 1,
+                        price,
+                        usageInstructions: 'Use as directed'
+                    });
+                }
+
                 const userSkin = aiQuiz.skinAssessment.skinType;
                 const skinSensitivity = aiQuiz.skinAssessment.skinSensitivity || '';
                 const isSensitive = skinSensitivity.toLowerCase() === 'sensitive' ||
                     skinSensitivity.toLowerCase() === 'very sensitive';
-
-                // console.log(`Skin sensitivity check: "${skinSensitivity}" → isSensitive: ${isSensitive}`);
 
                 const relevantTips = getRelevantTips(userSkin, isSensitive, filteredCandidates);
 

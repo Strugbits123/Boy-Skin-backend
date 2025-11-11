@@ -3,7 +3,8 @@ import Product from "../models/product.model";
 import { CacheState, EnhancedProductCache } from "../models/cache.model";
 import { NotionSelectItem } from "../models/notion.model";
 import { AICompatibleQuizModel } from "../models/quiz.model";
-
+import fs from 'fs';
+import path from 'path';
 /**
  * Database Service - Handles all database operations, caching, and Notion API integration
  * Provides enhanced product categorization and quality scoring for premium product recommendations

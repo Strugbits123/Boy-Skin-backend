@@ -17,13 +17,14 @@ interface ClientTestCase {
     concerns: string[];
     budget: string;
     routineTime: string;
+    additionalInfo?: string;
     expectedProducts: string[];
     testCaseId: string;
 }
 
 class TestDataService {
 
-    // Client-provided test cases - Only TC001 active for testing
+    // Client-provided test cases
     private static readonly CLIENT_TEST_CASES: ClientTestCase[] = [
         {
             name: "Test Case 1",
@@ -89,7 +90,7 @@ class TestDataService {
             skinSensitivity: "sensitive",
             acneStatus: "active acne",
             concerns: ["pores", "hyperpigmentation", "redness"],
-            budget: "0", // No budget specified
+            budget: "40",
             routineTime: "5_minute",
             expectedProducts: [
                 "Prequelskin Gleanser Non-Drying Glycerin Cleanser",
@@ -97,6 +98,43 @@ class TestDataService {
                 "Beauty of Joseon Relief Sun: Rice + Probiotic SPF50"
             ],
             testCaseId: "CLIENT_TC_004"
+        },
+        {
+            name: "Test Case 5",
+            email: "test5@example.com",
+            age: "18-24",
+            skinType: "oily",
+            skinSensitivity: "not sensitive",
+            acneStatus: "active acne",
+            concerns: ["texture", "hyperpigmentation", "redness", "shaving bumps"],
+            budget: "110",
+            routineTime: "5_minute",
+            expectedProducts: [
+                "Prequelskin Gleanser + SA Non-Drying Cleanser",
+                "Klairs Midnight Blue Calming Cream",
+                "Elta MD UV Clear Face Sunscreen SPF 46",
+                "Tower 28 SOS Rescue Spray"
+            ],
+            testCaseId: "CLIENT_TC_005"
+        },
+        {
+            name: "Test Case 6",
+            email: "test6@example.com",
+            age: "18-24",
+            skinType: "normal",
+            skinSensitivity: "not sensitive",
+            acneStatus: "acne-prone",
+            concerns: ["texture", "pores", "dullness"],
+            budget: "100",
+            routineTime: "10_minute",
+            additionalInfo: "allergic to niacinamide",
+            expectedProducts: [
+                "Neutrogena Hydro Boost Hydrating Gel Cleanser",
+                "The Ordinary Glycolic Acid 7% Exfoliating Toner",
+                "Bubble Slam Dunk Hydrating Face Moisturizer",
+                "La Roche-Posay Anthelios UV Hydra Daily Invisible Sunscreen SPF 50"
+            ],
+            testCaseId: "CLIENT_TC_006"
         }
     ];
 
@@ -104,107 +142,75 @@ class TestDataService {
      * Runs client test cases validation
      */
     static async runClientTestCases(): Promise<void> {
-        console.log('\n🎯 RUNNING CLIENT TEST CASES...\n');
+        console.log('\n🎯 RUNNING CLIENT TEST CASES\n');
         console.log('='.repeat(80));
 
         for (let i = 0; i < this.CLIENT_TEST_CASES.length; i++) {
             const testCase = this.CLIENT_TEST_CASES[i];
             if (!testCase) continue;
 
-            console.log(`\n📋 ${testCase.testCaseId}: ${testCase.name}`);
-            console.log(`Age: ${testCase.age} | Skin: ${testCase.skinType} | Sensitivity: ${testCase.skinSensitivity}`);
-            console.log(`Acne Status: ${testCase.acneStatus} | Concerns: ${testCase.concerns.join(', ')}`);
-            console.log(`Budget: $${testCase.budget} | Time: ${testCase.routineTime}`);
-            console.log(`Expected Products: ${testCase.expectedProducts.length}`);
-            testCase.expectedProducts.forEach((prod, idx) => {
-                console.log(`  ${idx + 1}. ${prod}`);
-            });
+            console.log(`\n📋 Got Product of ${testCase.testCaseId}: ${testCase.name}`);
+            console.log(`\nTest Case Data:`);
+            console.log(`  Age: ${testCase.age}`);
+            console.log(`  Skin Type: ${testCase.skinType}`);
+            console.log(`  Sensitivity: ${testCase.skinSensitivity}`);
+            console.log(`  Acne Status: ${testCase.acneStatus}`);
+            console.log(`  Concerns: ${testCase.concerns.join(', ')}`);
+            console.log(`  Budget: $${testCase.budget}`);
+            console.log(`  Routine Time: ${testCase.routineTime}`);
+            if (testCase.additionalInfo) {
+                console.log(`  Additional Info: ${testCase.additionalInfo}`);
+            }
 
             try {
                 const testQuiz = this.createClientTestQuiz(testCase);
-                console.log(`🔍 DEBUG: Test Quiz Created:`, JSON.stringify(testQuiz, null, 2));
-
                 const recommendations = await RecommendationService.getFinalProduct(testQuiz);
-                console.log(`🔍 DEBUG: Raw Recommendations:`, JSON.stringify(recommendations, null, 2));
 
-                if (recommendations) {
-                    console.log(`\n✅ SYSTEM OUTPUT:`);
-                    console.log(`💰 Total Cost: $${recommendations.totalCost || 0}`);
+                if (recommendations && recommendations.products && recommendations.products.length > 0) {
+                    console.log(`\nProducts (Total Cost: $${recommendations.totalCost || 0}):\n`);
 
-                    if (recommendations.products && recommendations.products.length > 0) {
-                        console.log(`📦 Recommended Products (${recommendations.products.length}):`);
-                        recommendations.products.forEach((product, idx) => {
-                            console.log(`  ${idx + 1}. ${product.productName || 'UNKNOWN NAME'} - $${product.price || 0}`);
-                            console.log(`      Target: ${product.targetConcern || 'N/A'} | Step: ${product.routineStep || 'N/A'} | ID: ${product.productId || 'N/A'}`);
+                    recommendations.products.forEach((product, idx) => {
+                        console.log(`  ${idx + 1}. ${product.productName || 'UNKNOWN'} - $${product.price || 0}`);
+                    });
+
+                    if (recommendations.tips && recommendations.tips.length > 0) {
+                        console.log(`\nImportant Notes:\n`);
+                        recommendations.tips.forEach((tip, idx) => {
+                            console.log(`  ${idx + 1}. ${tip}`);
                         });
-
-                        // Validate against client expectations
-                        const actualProducts = recommendations.products.map(p => p.productName || 'UNKNOWN');
-                        console.log(`🔍 ACTUAL PRODUCTS: ${JSON.stringify(actualProducts)}`);
-                        console.log(`🔍 EXPECTED PRODUCTS: ${JSON.stringify(testCase.expectedProducts)}`);
-
-                        const matchingProducts = testCase.expectedProducts.filter(expected =>
-                            actualProducts.some(actual => {
-                                const match = actual.toLowerCase().includes(expected.toLowerCase()) ||
-                                    expected.toLowerCase().includes(actual.toLowerCase());
-                                if (match) console.log(`✅ MATCH FOUND: "${actual}" matches "${expected}"`);
-                                return match;
-                            })
-                        );
-
-                        console.log(`\n🔍 VALIDATION:`);
-                        console.log(`Expected: ${testCase.expectedProducts.length} products`);
-                        console.log(`Got: ${actualProducts.length} products`);
-                        console.log(`Matches: ${matchingProducts.length} products`);
-
-                        if (matchingProducts.length > 0) {
-                            console.log(`✅ Matching products:`);
-                            matchingProducts.forEach(match => console.log(`  - ${match}`));
-                        }
-
-                        const accuracy = (matchingProducts.length / testCase.expectedProducts.length) * 100;
-                        console.log(`📊 Accuracy: ${accuracy.toFixed(1)}%`);
-
-                        // Validate essentials - improved detection for combo products
-                        const hasCleanser = actualProducts.some(name =>
-                            name.toLowerCase().includes('cleanser') || name.toLowerCase().includes('wash'));
-                        const hasMoisturizer = actualProducts.some(name => {
-                            const lowerName = name.toLowerCase();
-                            return lowerName.includes('moistur') || lowerName.includes('cream') ||
-                                lowerName.includes('hydrat') || lowerName.includes('watery') ||
-                                lowerName.includes('gel') || lowerName.includes('lotion');
-                        });
-                        const hasSPF = actualProducts.some(name =>
-                            name.toLowerCase().includes('spf') || name.toLowerCase().includes('sun'));
-
-                        console.log(`�️ Safety Check: Cleanser=${hasCleanser} | Moisturizer=${hasMoisturizer} | SPF=${hasSPF}`);
-
-                        if (recommendations.clinicalReasoning) {
-                            console.log(`💡 Clinical Reasoning: ${recommendations.clinicalReasoning.substring(0, 100)}...`);
-                        }
-
-                        if (accuracy >= 50) {
-                            console.log(`🎉 TEST PASSED (${accuracy.toFixed(1)}% match)`);
-                        } else {
-                            console.log(`⚠️ TEST NEEDS REVIEW (${accuracy.toFixed(1)}% match)`);
-                        }
-
-                    } else {
-                        console.log(`❌ No products recommended`);
                     }
 
+                    const accuracy = this.calculateAccuracy(recommendations.products, testCase.expectedProducts);
+                    console.log(`\n✅ Accuracy: ${accuracy.toFixed(1)}%`);
+
                 } else {
-                    console.log(`❌ FAILED: No recommendations generated`);
+                    console.log(`\n❌ No products recommended`);
                 }
 
             } catch (error) {
-                console.log(`❌ ERROR: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                console.log(`\n❌ ERROR: ${error instanceof Error ? error.message : 'Unknown error'}`);
             }
 
-            console.log('─'.repeat(80));
+            console.log('\n' + '─'.repeat(80));
         }
 
-        console.log('\n🎯 CLIENT TEST CASES COMPLETED!\n');
+        console.log('\n🎯 CLIENT TEST CASES COMPLETED\n');
+    }
+
+    /**
+     * Calculate accuracy between actual and expected products
+     */
+    private static calculateAccuracy(actualProducts: ProductRecommendation[], expectedProducts: string[]): number {
+        const actualNames = actualProducts.map(p => p.productName || 'UNKNOWN');
+
+        const matchingProducts = expectedProducts.filter(expected =>
+            actualNames.some(actual => {
+                return actual.toLowerCase().includes(expected.toLowerCase()) ||
+                    expected.toLowerCase().includes(actual.toLowerCase());
+            })
+        );
+
+        return (matchingProducts.length / expectedProducts.length) * 100;
     }
 
     /**
@@ -229,7 +235,7 @@ class TestDataService {
             work_on_acne: testCase.acneStatus,
             Budget: budgetValue,
             routine_time: testCase.routineTime,
-            additional_info: `Client test case: ${testCase.testCaseId}`,
+            additional_info: testCase.additionalInfo || `Client test case: ${testCase.testCaseId}`,
             terms_accepted: "true",
             newsletter_option: "false"
         };

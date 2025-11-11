@@ -17,7 +17,6 @@ export class ProductCategorizer {
         for (const p of products) {
             const steps = ProductUtils.productSteps(p);
 
-            // Use independent checks instead of else-if chain to allow multi-function products
             if (steps.some(s => s.includes("cleanse"))) {
                 cleansers.push(p);
             }

@@ -18,16 +18,54 @@ export class ValidationUtils {
         return null;
     }
 
+    static parseStrengthForStep(p: Product, targetStep: string): number | null {
+        const items = p.strengthRatingOfActives || [];
+        const normalized = targetStep.toLowerCase().trim();
+
+        const stepKeywords: { [key: string]: string[] } = {
+            "cleanse": ["cleanse"],
+            "moistur": ["moistur"],
+            "protect": ["protect"],
+            "treat": ["treat"],
+            "serum": ["treat", "serum"],
+            "active": ["treat", "active"]
+        };
+
+        let matchKeywords: string[] = [];
+        for (const [key, keywords] of Object.entries(stepKeywords)) {
+            if (normalized.includes(key)) {
+                matchKeywords = keywords;
+                break;
+            }
+        }
+
+        if (matchKeywords.length === 0) return null;
+
+        for (const it of items) {
+            const name = (it.name || "").toLowerCase();
+            if (matchKeywords.some(kw => name.includes(kw))) {
+                const m = name.match(/(\d)\s*\/\s*4/);
+                if (m) return parseInt((m[1] ?? "0"), 10);
+            }
+        }
+
+        return null;
+    }
+
     static passesStrengthFilter(p: Product, skinType: AICompatibleQuizModel["skinAssessment"]["skinType"]): boolean {
-        const s = this.parseStrength(p);
-        if (s == null) return true;
         if (skinType === "normal") return true;
 
         const steps = ProductUtils.productSteps(p);
         const inRange = (val: number, min: number, max: number) => val >= min && val <= max;
 
+        const isComboProduct = steps.some(s => s.includes("moistur")) && steps.some(s => s.includes("protect") || s.includes("spf"));
+
         for (const stepRaw of steps) {
             const step = stepRaw.toLowerCase();
+
+            const s = this.parseStrengthForStep(p, step);
+            if (s == null) continue;
+
             if (step.includes("protect") || step.includes("spf")) continue;
 
             if (step.includes("cleanse")) {
@@ -35,9 +73,13 @@ export class ValidationUtils {
                 if (skinType === "dry" && !inRange(s, 1, 2)) return false;
                 if (skinType === "combination" && !inRange(s, 1, 2)) return false;
             } else if (step.includes("moistur")) {
-                if (skinType === "oily" && !inRange(s, 1, 2)) return false;
+                if (isComboProduct) {
+                    continue;
+                }
+
+                if (skinType === "oily" && !inRange(s, 1, 3)) return false;
                 if (skinType === "dry" && !inRange(s, 2, 4)) return false;
-                if (skinType === "combination" && !inRange(s, 2, 4)) return false;
+                if (skinType === "combination" && !inRange(s, 1, 4)) return false;
             } else if (step.includes("treat") || step.includes("serum") || step.includes("active")) {
                 if (skinType === "oily" && !inRange(s, 2, 4)) return false;
                 if (skinType === "dry" && !inRange(s, 1, 4)) return false;
@@ -121,7 +163,6 @@ export class ValidationUtils {
     static respectsExfoliationWith(selection: Product[], candidate?: Product): boolean {
         const list = candidate ? [...selection, candidate] : selection.slice();
 
-        // 🔧 FIX: Separate cleanser and treatment identification
         const cleansers = list.filter(p => {
             const steps = ProductUtils.productSteps(p);
             return steps.includes("cleanse") && !steps.some(s => s.includes("treat"));
@@ -132,33 +173,21 @@ export class ValidationUtils {
             return steps.some(s => s.includes("treat")) && !steps.includes("cleanse");
         });
 
-        // 🔧 FIX: Handle products with multiple steps (cleanse + treat)
         const multiStepProducts = list.filter(p => {
             const steps = ProductUtils.productSteps(p);
             return steps.includes("cleanse") && steps.some(s => s.includes("treat"));
         });
 
-        // Count exfoliating products by category
         const exfoliatingCleansers = cleansers.filter(p => this.isExfoliating(p));
         const exfoliatingTreatments = treatments.filter(p => this.isExfoliating(p));
         const exfoliatingMultiStep = multiStepProducts.filter(p => this.isExfoliating(p));
 
         const totalExfoliating = exfoliatingCleansers.length + exfoliatingTreatments.length + exfoliatingMultiStep.length;
 
-        const candidateName = candidate?.productName || 'Unknown';
-        // console.log(`📋 AI.DOC RULE R6 CHECK: ${candidateName}`);
-        // console.log(`   📊 Cleansers Exfoliating: ${exfoliatingCleansers.length} (${exfoliatingCleansers.map(p => p.productName).join(', ') || 'None'})`);
-        // console.log(`   📊 Treatments Exfoliating: ${exfoliatingTreatments.length} (${exfoliatingTreatments.map(p => p.productName).join(', ') || 'None'})`);
-        // console.log(`   📊 Multi-Step Exfoliating: ${exfoliatingMultiStep.length} (${exfoliatingMultiStep.map(p => p.productName).join(', ') || 'None'})`);
-        // console.log(`   📊 Total Exfoliating: ${totalExfoliating}/1 (AI.DOC Rule R6: MAX 1)`);
-
-        // AI.DOC RULE R6: STRICT - Only ONE exfoliating product in entire routine
         if (totalExfoliating > 1) {
-            // console.log(`   ❌ RULE R6 VIOLATION: Multiple exfoliating products (${totalExfoliating} > 1)`);
             return false;
         }
 
-        // console.log(`   ✅ RULE R6 COMPLIANT: Single exfoliant rule respected`);
         return true;
     }
 }

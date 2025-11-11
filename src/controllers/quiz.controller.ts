@@ -119,19 +119,27 @@ class QuizController {
 
             const sortedProducts = finalProducts.sort((a, b) => {
                 const getStepOrder = (product: any): number => {
-                    const steps = (product.step || []).map((s: any) => (s.name || "").toLowerCase());
+                    const format = (product.format?.name || "").toLowerCase();
+                    const productName = (product.productName || "").toLowerCase();
 
-                    if (steps.some((s: string) => s.includes("cleanse"))) return 1;
+                    if (format.includes("cleanser")) return 1;
 
-                    const hasMoisturize = steps.some((s: string) => s.includes("moistur"));
-                    if (hasMoisturize) return 2;
+                    if (format.includes("toner")) return 2;
 
-                    const hasProtect = steps.some((s: string) => s.includes("protect"));
-                    if (hasProtect) return 3;
+                    if (format.includes("serum")) return 3;
 
-                    if (steps.some((s: string) => s.includes("treat") || s.includes("serum") || s.includes("active"))) return 4;
+                    if (format.includes("mask")) return 4;
 
-                    return 5;
+                    if (format.includes("eye cream") || format.includes("eye gel") ||
+                        (productName.includes("eye") && (format.includes("cream") || format.includes("gel")))) return 5;
+
+                    if (format.includes("cream") || format.includes("moisturizer") || format.includes("lotion")) return 6;
+
+                    if (format.includes("sunscreen") || format.includes("spf")) return 7;
+
+                    if (format.includes("spray") || format.includes("mist")) return 8;
+
+                    return 10;
                 };
 
                 return getStepOrder(a) - getStepOrder(b);

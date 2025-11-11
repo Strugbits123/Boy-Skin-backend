@@ -216,17 +216,26 @@ class ValidationService {
             return "55+";
         };
 
-        // Enhanced time commitment mapping
+        // Enhanced time commitment mapping - FIXED: Check specific patterns first
         const mapTimeCommitment = (time: string): "5_minute" | "10_minute" | "15+_minute" => {
             const normalized = time.toLowerCase().trim();
 
-            if (normalized.includes("5") || normalized.includes("five")) return "5_minute";
-            if (normalized.includes("10") || normalized.includes("ten")) return "10_minute";
+            // Priority 1: Exact match (fastest path for valid inputs)
+            if (normalized === "5_minute") return "5_minute";
+            if (normalized === "10_minute") return "10_minute";
+            if (normalized === "15+_minute") return "15+_minute";
+
+            // Priority 2: Check longer/specific patterns FIRST (15+ before 10, 10 before 5)
             if (normalized.includes("15") || normalized.includes("fifteen") ||
                 normalized.includes("20") || normalized.includes("twenty") ||
                 normalized.includes("30") || normalized.includes("thirty")) return "15+_minute";
 
-            return "10_minute"; // Default fallback
+            if (normalized.includes("10") || normalized.includes("ten")) return "10_minute";
+
+            if (normalized.includes("5") || normalized.includes("five")) return "5_minute";
+
+            // Default fallback
+            return "10_minute";
         };
 
         // Enhanced budget formatting with validation
