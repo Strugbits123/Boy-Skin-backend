@@ -330,21 +330,26 @@ class RecommendationService {
             // Step 1: Transform quiz to AI-compatible format
             const aiQuiz: AICompatibleQuizModel = ValidationService.transformQuizToAIFormat(quiz);
 
-            // Step 2: Get products from database
-            const products = await DbService.getCachedNotionProducts();
+            // Step 2: Get cached notion products (commented out best products for now)
+            // const bestProducts = await DbService.getBestProductsForUser(aiQuiz);
+            // setTimeout(() => {
+            //     console.log(`Best products for user (${aiQuiz.demographics.name}): | User Quiz Data : ${JSON.stringify(aiQuiz)}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n=====================================================================\n\n\n\n\n`);
+            //     bestProducts.forEach(p => {
+            //         console.log(`- ${p.productName} (ID: ${p.productId})`);
+            //     });
+            //     console.log(`Found ${bestProducts.length} best products for user`);
+            // }, 2000);
 
-            if (!products || products.length === 0) {
-                throw new Error("No products found in database");
-            }
+            const allProducts = await DbService.getCachedNotionProducts();
 
             const allConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary];
             const primaryConcern = allConcerns[0] || 'general';
 
-            const filteredCandidates = ProductFilter.prefilterProducts(aiQuiz, products);
+            const filteredCandidates = await ProductFilter.prefilterProducts(aiQuiz, allProducts);
 
-            console.log('\n==================');
-            console.log(`Products Recommended for ${quiz.Name}`);
-            console.log('==================\n');
+            // console.log('\n==================');
+            // console.log(`Products Recommended for ${quiz.Name}`);
+            // console.log('==================\n');
 
             const userNotes = ProductFilter.getUserNotes();
 

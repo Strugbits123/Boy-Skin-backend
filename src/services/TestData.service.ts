@@ -23,7 +23,7 @@ interface ClientTestCase {
 
 class TestDataService {
 
-    // Client-provided test cases
+    // Client-provided test cases - Only TC001 active for testing
     private static readonly CLIENT_TEST_CASES: ClientTestCase[] = [
         {
             name: "Test Case 1",
@@ -122,7 +122,10 @@ class TestDataService {
 
             try {
                 const testQuiz = this.createClientTestQuiz(testCase);
+                console.log(`🔍 DEBUG: Test Quiz Created:`, JSON.stringify(testQuiz, null, 2));
+
                 const recommendations = await RecommendationService.getFinalProduct(testQuiz);
+                console.log(`🔍 DEBUG: Raw Recommendations:`, JSON.stringify(recommendations, null, 2));
 
                 if (recommendations) {
                     console.log(`\n✅ SYSTEM OUTPUT:`);
@@ -131,16 +134,22 @@ class TestDataService {
                     if (recommendations.products && recommendations.products.length > 0) {
                         console.log(`📦 Recommended Products (${recommendations.products.length}):`);
                         recommendations.products.forEach((product, idx) => {
-                            console.log(`  ${idx + 1}. ${product.productName} - $${product.price || 0}`);
+                            console.log(`  ${idx + 1}. ${product.productName || 'UNKNOWN NAME'} - $${product.price || 0}`);
+                            console.log(`      Target: ${product.targetConcern || 'N/A'} | Step: ${product.routineStep || 'N/A'} | ID: ${product.productId || 'N/A'}`);
                         });
 
                         // Validate against client expectations
-                        const actualProducts = recommendations.products.map(p => p.productName);
+                        const actualProducts = recommendations.products.map(p => p.productName || 'UNKNOWN');
+                        console.log(`🔍 ACTUAL PRODUCTS: ${JSON.stringify(actualProducts)}`);
+                        console.log(`🔍 EXPECTED PRODUCTS: ${JSON.stringify(testCase.expectedProducts)}`);
+
                         const matchingProducts = testCase.expectedProducts.filter(expected =>
-                            actualProducts.some(actual =>
-                                actual.toLowerCase().includes(expected.toLowerCase()) ||
-                                expected.toLowerCase().includes(actual.toLowerCase())
-                            )
+                            actualProducts.some(actual => {
+                                const match = actual.toLowerCase().includes(expected.toLowerCase()) ||
+                                    expected.toLowerCase().includes(actual.toLowerCase());
+                                if (match) console.log(`✅ MATCH FOUND: "${actual}" matches "${expected}"`);
+                                return match;
+                            })
                         );
 
                         console.log(`\n🔍 VALIDATION:`);

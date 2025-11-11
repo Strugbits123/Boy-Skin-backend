@@ -30,6 +30,83 @@ export class EssentialSelector {
         this.userNotes = [];
     }
 
+    /**
+     * 🎯 PREMIUM PRODUCT CRITERIA: Apply same logic as ProductFilter for consistency
+     */
+    private static isBestProductForUser(product: Product, aiQuiz: AICompatibleQuizModel): boolean {
+        try {
+            // STEP 1: Check if it's a best product (premium ingredients + functions + price)
+            const primaryActives = product.primaryActiveIngredients || [];
+            const functions = product.function || [];
+            const price = product.price || 0;
+
+            const topActives = ["Azelaic Acid", "Retinol", "Vitamin C", "Niacinamide", "Salicylic Acid", "Hyaluronic Acid"];
+            const topFunctions = ["Treat", "Spot Treatment", "Exfoliate", "Protect"];
+
+            const hasTopActive = primaryActives.some(active =>
+                topActives.some(topActive =>
+                    (active.name || "").toLowerCase().includes(topActive.toLowerCase())
+                )
+            );
+
+            const hasTopFunction = functions.some(func =>
+                topFunctions.some(topFunc =>
+                    (func.name || "").includes(topFunc)
+                )
+            );
+
+            const hasPremiumPrice = price >= 18;
+            const hasMultipleActives = primaryActives.length >= 2;
+
+            // 🎯 RELAXED PREMIUM CRITERIA FOR ESSENTIAL CATEGORIES (cleanser, moisturizer, SPF)
+            const steps = ProductUtils.productSteps(product);
+            const isCleanser = steps.includes("cleanse");
+            const isMoisturizerOrSPF = steps.includes("moisturize") || steps.includes("protect");
+            const isTreatment = steps.includes("treat");
+
+            let isBestProduct: boolean;
+            if (isCleanser) {
+                // For cleansers: VERY LENIENT - any premium criteria OR decent price OR good functions
+                isBestProduct = hasTopActive || hasTopFunction || hasPremiumPrice || hasMultipleActives || price >= 8 || functions.length > 0;
+            } else if (isMoisturizerOrSPF) {
+                // For moisturizers/SPF: Moderate criteria - any premium criteria OR decent price
+                isBestProduct = hasTopActive || hasTopFunction || hasPremiumPrice || hasMultipleActives || price >= 12;
+            } else {
+                // For treatments: Strict premium criteria
+                isBestProduct = (hasTopActive && hasTopFunction) || (hasTopActive && hasPremiumPrice) || (hasTopFunction && hasMultipleActives);
+            }
+
+            if (!isBestProduct) return false;
+
+            // STEP 2: User-specific matching
+            const userSkinType = aiQuiz.skinAssessment.skinType.toLowerCase();
+            const userConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary].map(c => c.toLowerCase());
+            const isSensitive = aiQuiz.skinAssessment.skinSensitivity === "sensitive";
+
+            // STEP 3: Skin type matching
+            const productSkinTypes = (product.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+
+            // STEP 4: Concern matching
+            const productConcerns = (product.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            const concernMatch = userConcerns.some(uc =>
+                productConcerns.some(pc => pc.includes(uc) || uc.includes(pc))
+            );
+
+            // STEP 5: Sensitive skin check
+            if (isSensitive) {
+                const sensitiveFriendly = (product.sensitiveSkinFriendly?.name || "").toLowerCase();
+                if (sensitiveFriendly.includes("no")) return false;
+            }
+
+            return skinTypeMatch && concernMatch;
+
+        } catch (error) {
+            console.error('Error checking if product is best for user in EssentialSelector:', error);
+            return false;
+        }
+    }
+
     static ensureEssentials(
         aiQuiz: AICompatibleQuizModel,
         filtered: Product[],
@@ -41,9 +118,10 @@ export class EssentialSelector {
         let moisturizer: Product | null = null;
         let protect: Product | null = null;
 
+        // 🎯 APPLY PREMIUM CRITERIA: Filter cleansers with isBestProductForUser logic
         if (buckets.cleansers.length > 0) {
             for (const c of buckets.cleansers) {
-                if (ConflictDetector.isSafeToAdd(c, [])) {
+                if (ConflictDetector.isSafeToAdd(c, []) && this.isBestProductForUser(c, aiQuiz)) {
                     cleanser = c;
                     break;
                 }
@@ -65,6 +143,7 @@ export class EssentialSelector {
         });
 
         const scoredCombos = moisturizersWithSPF
+            .filter(m => this.isBestProductForUser(m, aiQuiz))  // 🎯 APPLY PREMIUM CRITERIA
             .map(m => ({
                 m,
                 skinMatch: ProductUtils.productHasSkinType(m, skinType) ? 1 : 0,
@@ -83,6 +162,7 @@ export class EssentialSelector {
         });
 
         const scoredSPF = protectsStandalone
+            .filter(p => this.isBestProductForUser(p, aiQuiz))  // 🎯 APPLY PREMIUM CRITERIA
             .map(p => ({
                 p,
                 skinMatch: ProductUtils.productHasSkinType(p, skinType) ? 1 : 0,
@@ -119,7 +199,7 @@ export class EssentialSelector {
             // Select moisturizer first
             if (!moisturizer && moisturizersNoSPF.length > 0) {
                 for (const m of moisturizersNoSPF) {
-                    if (ConflictDetector.isSafeToAdd(m, currentSelection)) {
+                    if (ConflictDetector.isSafeToAdd(m, currentSelection) && this.isBestProductForUser(m, aiQuiz)) {
                         moisturizer = m;
                         // console.log(`✅ SELECTED MOISTURIZER: ${m.productName}`);
                         break;
@@ -133,7 +213,7 @@ export class EssentialSelector {
                 if (moisturizer) selectionWithMoisturizer.push(moisturizer);
 
                 for (const spfItem of scoredSPF) {
-                    if (ConflictDetector.isSafeToAdd(spfItem.p, selectionWithMoisturizer)) {
+                    if (ConflictDetector.isSafeToAdd(spfItem.p, selectionWithMoisturizer) && this.isBestProductForUser(spfItem.p, aiQuiz)) {
                         protect = spfItem.p;
                         // console.log(`✅ SELECTED STANDALONE SPF: ${spfItem.p.productName}`);
                         break;
@@ -147,7 +227,9 @@ export class EssentialSelector {
         if (!cleanser || !moisturizer || !protect) {
             const isSensitive = aiQuiz.skinAssessment.skinSensitivity === "sensitive";
 
+            // 🎯 CRITICAL FIX: Use only premium products in fallback, not allProducts
             let relaxedPool = allProducts
+                .filter(p => this.isBestProductForUser(p, aiQuiz))  // 🎯 APPLY PREMIUM CRITERIA FIRST
                 .filter(p => !ValidationUtils.violatesSafety(p, aiQuiz))
                 .filter(p => ValidationUtils.passesStrengthFilter(p, skinType));
 
@@ -252,7 +334,10 @@ export class EssentialSelector {
             const skinType = aiQuiz.skinAssessment.skinType;
             const isSensitive = aiQuiz.skinAssessment.skinSensitivity === "sensitive";
 
-            let emergencyPool = allProducts.filter(p => !ValidationUtils.violatesSafety(p, aiQuiz));
+            // 🎯 EMERGENCY FALLBACK: Still use premium products only, but with more lenient criteria
+            let emergencyPool = allProducts
+                .filter(p => this.isBestProductForUser(p, aiQuiz))  // 🎯 KEEP PREMIUM CRITERIA EVEN IN EMERGENCY
+                .filter(p => !ValidationUtils.violatesSafety(p, aiQuiz));
 
             if (isSensitive) {
                 emergencyPool = emergencyPool.filter(p => ProductUtils.isSensitiveSafe(p));
@@ -301,7 +386,9 @@ export class EssentialSelector {
 
         let treatment: Product | null = null;
         const allowEye = aiQuiz.concerns.primary.includes("dark circles") || aiQuiz.concerns.secondary.includes("dark circles");
-        let treatPool = buckets.treats.filter(t => allowEye ? true : !ProductUtils.isEyeProduct(t));
+        let treatPool = buckets.treats
+            .filter(t => allowEye ? true : !ProductUtils.isEyeProduct(t))
+            .filter(t => this.isBestProductForUser(t, aiQuiz));  // 🎯 APPLY PREMIUM CRITERIA
 
         const currentSelectionForTreatment: Product[] = [];
         if (cleanser) currentSelectionForTreatment.push(cleanser);
@@ -340,6 +427,7 @@ export class EssentialSelector {
 
             const isSensitive = aiQuiz.skinAssessment.skinSensitivity === "sensitive";
             let searchPool = allProducts
+                .filter(p => this.isBestProductForUser(p, aiQuiz))  // 🎯 APPLY PREMIUM CRITERIA
                 .filter(p => !ValidationUtils.violatesSafety(p, aiQuiz))
                 .filter(p => ValidationUtils.passesStrengthFilter(p, skinType));
 

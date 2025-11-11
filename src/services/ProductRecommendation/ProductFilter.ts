@@ -1,6 +1,6 @@
 /**
- * Product Recommendation Filter
- * Coordinates 10-step pipeline for personalized skincare routine generation
+ * Clean Product Recommendation Filter
+ * Simple flow: All Products → Safety → Essentials (with premium criteria) → Treatments → Budget
  */
 
 import Product from "../../models/product.model";
@@ -8,364 +8,447 @@ import { AICompatibleQuizModel } from "../../models/quiz.model";
 import { ProductUtils } from "./utils/ProductUtils";
 import { SPFUtils } from "./utils/SPFUtils";
 import { ValidationUtils } from "./utils/ValidationUtils";
-import { DiversityChecker } from "./utils/DiversityChecker";
 import { ConcernScorer } from "./scoring/ConcernScorer";
-import { CompatibilityEnforcer } from "./compatibility/CompatibilityEnforcer";
 import { ProductCategorizer } from "./selection/ProductCategorizer";
-import { EssentialSelector } from "./selection/EssentialSelector";
-import { RoutineBuilder } from "./selection/RoutineBuilder";
 import { BudgetManager } from "./budget/BudgetManager";
+import DbService from "../db.service";
 
 
 export class ProductFilter {
 
-    /**
-     * Calculate diversity score to prevent same products in every routine
-     */
-    static calculateDiversityScore(p: Product, aiQuiz: AICompatibleQuizModel): number {
-        let diversityScore = 0;
 
-        // Boost different product categories based on concerns
-        const primaryConcerns = aiQuiz.concerns.primary;
-        const steps = ProductUtils.productSteps(p);
 
-        // Encourage treatment diversity
-        if (steps.includes("treat")) {
-            if (primaryConcerns.includes("acne") && ProductUtils.extractActives(p).includes("salicylic acid")) {
-                diversityScore += 3;
-            }
-            if (primaryConcerns.includes("hyperpigmentation") && ProductUtils.extractActives(p).includes("vitamin c")) {
-                diversityScore += 3;
-            }
-            if (primaryConcerns.includes("texture") && ProductUtils.extractActives(p).includes("glycolic acid")) {
-                diversityScore += 3;
-            }
-            if (primaryConcerns.includes("redness") && ProductUtils.extractActives(p).includes("niacinamide")) {
-                diversityScore += 3;
-            }
-        }
 
-        return diversityScore;
-    }
 
     /**
-     * Validates that routine contains all essential product categories
+     * Main filtering pipeline: All Products → Safety → Essentials → Treatments → Budget
      */
-    static validateEssentials(selection: Product[]): {
-        isValid: boolean;
-        hasCleanser: boolean;
-        hasMoisturizer: boolean;
-        hasProtect: boolean;
-        hasTreatment: boolean;
-    } {
-        const hasCleanser = selection.some(p => {
-            const steps = ProductUtils.productSteps(p);
-            return steps.includes("cleanse");
-        });
+    static async prefilterProducts(aiQuiz: AICompatibleQuizModel, allProducts: Product[]): Promise<Product[]> {
+        console.log(`🚀 Starting clean filter with ${allProducts.length} total products`);
 
-        const hasMoisturizer = selection.some(p => {
-            const steps = ProductUtils.productSteps(p);
-            return steps.includes("moisturize");
-        });
+        // STEP 1: Apply ONLY safety rules (no premium filtering)
+        let safeProducts = allProducts
+            .filter(p => !ProductUtils.hasNonCompatibleConflict(p))
+            .filter(p => !ValidationUtils.violatesSafety(p, aiQuiz))
+            .filter(p => ProductUtils.productHasSkinType(p, aiQuiz.skinAssessment.skinType))
+            .filter(p => ValidationUtils.passesStrengthFilter(p, aiQuiz.skinAssessment.skinType));
 
-        const hasProtect = selection.some(p => {
-            const steps = ProductUtils.productSteps(p);
-            return steps.includes("protect");
-        });
-
-        // Enhanced validation: Check for combo products that serve multiple functions
-        const hasComboMoisturizerSPF = selection.some(p => {
-            const steps = ProductUtils.productSteps(p);
-            return steps.includes("moisturize") && steps.includes("protect");
-        });
-
-        const hasTreatment = selection.some(p => {
-            const steps = ProductUtils.productSteps(p);
-            return steps.includes("treat") || steps.includes("serum") || steps.includes("active");
-        });
-
-        // Both moisturizer and protect requirements can be met by combo products
-        const finalHasProtect = hasProtect;
-        const finalHasMoisturizer = hasMoisturizer || hasComboMoisturizerSPF;
-
-        return {
-            isValid: hasCleanser && finalHasMoisturizer && finalHasProtect,
-            hasCleanser,
-            hasMoisturizer: finalHasMoisturizer,
-            hasProtect: finalHasProtect,
-            hasTreatment
-        };
-    }
-
-    /**
-     * Executes 10-step filtering pipeline to generate personalized routine
-     */
-    static prefilterProducts(aiQuiz: AICompatibleQuizModel, allProducts: Product[]): Product[] {
-        EssentialSelector.clearUserNotes();
-
-        // AI.DOC Phase 1: Safety Filtering Rules (CRITICAL - Apply first)
-        let filtered = allProducts.filter(p => !ProductUtils.hasNonCompatibleConflict(p));
-        filtered = filtered.filter(p => !ValidationUtils.violatesSafety(p, aiQuiz));
-
-        // AI.DOC Phase 2: Skin Type Matching (EXACT matches only per Rules T1-T4)
-        const skinType = aiQuiz.skinAssessment.skinType;
-        filtered = filtered.filter(p => ProductUtils.productHasSkinType(p, skinType));
-
-        // AI.DOC Rule T5: Sensitive Skin Override (improved to be less restrictive)
         if (aiQuiz.skinAssessment.skinSensitivity === "sensitive") {
-            filtered = filtered.filter(p => ProductUtils.isSensitiveSafe(p));
+            safeProducts = safeProducts.filter(p => ProductUtils.isSensitiveSafe(p));
         }
 
-        // AI.DOC Rule T6: Strength of Actives Filter (Post Skin-Type)
-        filtered = filtered.filter(p => ValidationUtils.passesStrengthFilter(p, skinType));        // AI.DOC Phase 3: Check routine architecture requirements  
-        const timeCommitment = aiQuiz.preferences.timeCommitment;
-        const routineConfig = RoutineBuilder.getRoutineConfig(timeCommitment);
+        console.log(`✅ Safe products after filtering: ${safeProducts.length}`);
 
-        // AI.DOC Phase 4: Enhanced Concern-Based Targeting with Diversity
-        const scoredProducts = filtered.map(p => ({
-            product: p,
-            concernScore: ConcernScorer.scoreForConcerns(p, aiQuiz),
-            diversityScore: this.calculateDiversityScore(p, aiQuiz)
-        })).sort((a, b) => (b.concernScore + b.diversityScore) - (a.concernScore + a.diversityScore));
+        // STEP 2: Select 3 essentials with premium criteria
+        const essentials = this.selectEssentials(aiQuiz, safeProducts);
+        console.log(`✅ Selected essentials: ${essentials.length} (${essentials.map(p => p.productName).join(', ')})`);
 
-        // Use top-scored products for selection
-        const topScoredProducts = scoredProducts.map(sp => sp.product);
+        // STEP 3: Add treatments if budget allows
+        const withTreatments = this.addTreatments(aiQuiz, safeProducts, essentials);
+        console.log(`✅ With treatments: ${withTreatments.length}`);
 
-        // 🎯 SINGLE SPF SELECTION POINT - Only EssentialSelector decides SPF
-        const essentials = EssentialSelector.ensureEssentials(aiQuiz, topScoredProducts, allProducts);
+        // STEP 4: Apply budget optimization
+        const budgetOptimized = this.optimizeBudget(aiQuiz, withTreatments);
+        console.log(`✅ Final routine: ${budgetOptimized.length} products, Cost: $${ProductUtils.totalCost(budgetOptimized)}`);
 
-        // Pass essentials to RoutineBuilder (no duplicate selection)  
-        const finalPick = RoutineBuilder.buildRoutineBasics(aiQuiz, topScoredProducts, allProducts, essentials);
-
-        const adjusted = BudgetManager.enforceBudget(aiQuiz, finalPick, filtered);
-
-        // PRODUCTION FIX: Safe compatibility checking to prevent massive product drops
-        let compatible = adjusted.filter(p => {
-            return !ValidationUtils.violatesSafety(p, aiQuiz) &&
-                !ProductUtils.hasNonCompatibleConflict(p);
-        });
-
-        const validation = this.validateEssentials(compatible);
-
-        let final = DiversityChecker.ensureDiversity(compatible, aiQuiz, filtered);
-
-        // PRODUCTION SAFETY: Ensure minimum product count meets AI.doc requirements
-        if (final.length < 3) {
-            const safeProducts = filtered.filter(p =>
-                !ValidationUtils.violatesSafety(p, aiQuiz) &&
-                ProductUtils.productHasSkinType(p, aiQuiz.skinAssessment.skinType)
-            );
-
-            const additionalProducts = safeProducts
-                .filter(p => !final.some(f => f.productId === p.productId))
-                .slice(0, 3 - final.length);
-
-            final = [...final, ...additionalProducts];
-        } if (!validation.isValid) {
-            // console.error('CRITICAL: Core essentials missing after pipeline!');
-            // console.error(`Missing: Cleanser=${!validation.hasCleanser}, Moisturizer=${!validation.hasMoisturizer}, SPF=${!validation.hasProtect}`);
-
-            // 🚨 BACKUP ESSENTIALS - Use ORIGINAL essentials (no duplicate selection!)
-            // console.log(`🚨 BACKUP MODE: Using original essentials instead of creating new ones`);
-
-            if (!validation.hasCleanser && essentials.cleanser) {
-                // console.log(`🔧 Adding backup cleanser: ${essentials.cleanser.productName}`);
-                final.push(essentials.cleanser);
-            }
-            if (!validation.hasMoisturizer && essentials.moisturizer) {
-                // console.log(`🔧 Adding backup moisturizer: ${essentials.moisturizer.productName}`);
-                final.push(essentials.moisturizer);
-            }
-            if (!validation.hasProtect && essentials.protect) {
-                const alreadyAdded = final.some((p: Product) => p.productId === essentials.protect?.productId);
-                if (!alreadyAdded) {
-                    // console.log(`🔧 Adding backup SPF: ${essentials.protect.productName}`);
-                    final.push(essentials.protect);
-                } else {
-                    // console.log(`⚠️ SPF already present, skipping backup`);
-                }
-            }
-            if (!validation.hasTreatment && essentials.treatment) {
-                // console.log(`🔧 Adding backup treatment: ${essentials.treatment.productName}`);
-                final.push(essentials.treatment);
-            }
-
-            // 🧹 COMPREHENSIVE DUPLICATE REMOVAL
-            // console.log(`🧹 CLEANING DUPLICATES: Before cleanup: ${final.length} products`);
-            // final.forEach((p, index) => console.log(`   ${index + 1}. ${p.productName}`));
-
-            const seen = new Set<string>();
-            final = final.filter((p: Product) => {
-                if (seen.has(p.productId)) {
-                    // console.log(`❌ REMOVED DUPLICATE: ${p.productName}`);
-                    return false;
-                }
-                seen.add(p.productId);
-                return true;
-            });
-
-            // console.log(`✅ AFTER CLEANUP: ${final.length} products remaining`);
-
-            const totalCost = ProductUtils.totalCost(final);
-            const { ceil } = BudgetManager.getBudgetBounds(aiQuiz);
-            if (totalCost > ceil) {
-                const { essentials, treats } = RoutineBuilder.splitEssentialsAndTreats(final);
-                const scored = treats
-                    .map((t: Product) => ({ t, s: ConcernScorer.scoreForConcerns(t, aiQuiz) }))
-                    .sort((a: { t: Product; s: number }, b: { t: Product; s: number }) => a.s - b.s);
-
-                let adjusted = [...essentials];
-                let cost = ProductUtils.totalCost(adjusted);
-
-                for (const item of scored.reverse()) {
-                    const newCost = cost + (item.t.price || 0);
-                    if (newCost <= ceil) {
-                        adjusted.push(item.t);
-                        cost = newCost;
-                    }
-                }
-                final = adjusted;
-            }
-        }
-
-        if (final.length < 3) {
-            const safePool = allProducts
-                .filter(p => !ValidationUtils.violatesSafety(p, aiQuiz))
-                .filter(p => ValidationUtils.passesStrengthFilter(p, aiQuiz.skinAssessment.skinType));
-            const need = 3 - final.length;
-            const existingIds = new Set(final.map((p: Product) => p.productId));
-            const byCat = ProductCategorizer.bucketByCategory(safePool.filter((p: Product) => !existingIds.has(p.productId)));
-            const addables: Product[] = [];
-
-            // 🚨 CHECK: Don't add SPF if already exists
-            const hasSPF = final.some(p => {
-                const steps = ProductUtils.productSteps(p);
-                return steps.includes("protect") && SPFUtils.passesSpfQuality(p);
-            });
-
-            for (const p of byCat.protects) {
-                if (addables.length >= need) break;
-                if (!SPFUtils.passesSpfQuality(p)) continue;
-
-                if (hasSPF) {
-                    // console.log(`🚫 BLOCKED ADDITIONAL SPF: ${p.productName} (SPF already exists)`);
-                    continue; // Skip SPF if already have one
-                }
-
-                // console.log(`➕ ADDING BACKUP SPF: ${p.productName}`);
-                addables.push(p);
-            }
-            for (const m of byCat.moisturizers) {
-                if (addables.length >= need) break;
-                addables.push(m);
-            }
-            for (const t of byCat.treats) {
-                if (addables.length >= need) break;
-                if (ValidationUtils.respectsExfoliationWith(final, t)) addables.push(t);
-            }
-            final = [...final, ...addables.slice(0, need)];
-        }
-
-        let ordered = CompatibilityEnforcer.finalSort(aiQuiz, final);
-
-        // AI.DOC Compliance Validation using existing ValidationUtils
-
-        // AI.DOC Rule R6: Single Exfoliant Per Routine (STRICT) 
-        const exfoliatingProducts = ordered.filter(p => ValidationUtils.isExfoliating(p));
-        if (exfoliatingProducts.length > 1) {
-            // Remove exfoliating cleansers, keep exfoliating treatments (AI.DOC preference)
-            const exfoliatingCleansers = exfoliatingProducts.filter((p: Product) => {
-                const steps = ProductUtils.productSteps(p);
-                return steps.includes("cleanse");
-            });
-
-            ordered = ordered.filter(p => !exfoliatingCleansers.includes(p));
-            EssentialSelector.addUserNote("Removed exfoliating cleanser to comply with single exfoliant rule - kept exfoliating treatment for better results.");
-        }
-
-        // AI.DOC Rule R7: Per-Step Product Caps (STRICT)
-        // Max 1 cleanser, 1 moisturizer, 1 protect product
-        const seenSteps = new Set<string>();
-        ordered = ordered.filter(p => {
-            const steps = ProductUtils.productSteps(p);
-            const criticalSteps = ["cleanse", "moisturize", "protect"];
-
-            for (const step of steps) {
-                if (criticalSteps.includes(step)) {
-                    if (seenSteps.has(step)) {
-                        return false; // Skip duplicate step
-                    }
-                    seenSteps.add(step);
-                }
-            }
-            return true;
-        });
-
-        // FINAL SPF DEDUPLICATION - Remove duplicate SPFs after ALL pipeline steps
-        const spfProducts = ordered.filter(p => {
-            const steps = ProductUtils.productSteps(p);
-            return steps.includes("protect") && SPFUtils.passesSpfQuality(p);
-        });
-
-        if (spfProducts.length > 1) {
-            // Keep only the first SPF and remove others (AI.DOC Rule R7 compliance)
-            const keepSPF = spfProducts[0];
-            const removeSPF = spfProducts.slice(1);
-
-            ordered = ordered.filter(p => {
-                const shouldRemove = removeSPF.some(spf => spf.productId === p.productId);
-                return !shouldRemove;
-            });
-        }
-
-        const finalValidation = this.validateEssentials(ordered);
-
-        if (!finalValidation.isValid) {
-            // console.error('❌❌❌ CRITICAL ERROR: Core essential products missing after all steps!');
-            // console.error('Missing:', {
-            //     cleanser: !finalValidation.hasCleanser,
-            //     moisturizer: !finalValidation.hasMoisturizer,
-            //     protect: !finalValidation.hasProtect
-            // });
-        }
-
-        // Generate accurate budget and treatment notes with final calculations
-        const finalCost = ProductUtils.totalCost(ordered);
-        const { ceil } = BudgetManager.getBudgetBounds(aiQuiz);
-        const userSkinType = aiQuiz.skinAssessment.skinType;
-
-        // Check if routine has treatment products
-        const hasTreatments = ordered.some(p => {
-            const steps = ProductUtils.productSteps(p);
-            return steps.includes("treat") || steps.includes("serum") || steps.includes("active");
-        });
-
-        // Generate treatment note for sensitive skin without treatments
-        if (!hasTreatments && aiQuiz.skinAssessment.skinSensitivity === "sensitive") {
-            const treatmentNote = `Note: We couldn't include a treatment product in your routine because we couldn't find one that matches your ${userSkinType.toLowerCase()} skin type and addresses your specific concerns safely. We've prioritized your core essentials (cleanser, moisturizer, and SPF) to ensure the best results without compromising on quality or safety.`;
-            EssentialSelector.addUserNote(treatmentNote);
-        }
-
-        // Generate budget note only if actually over budget
-        if (finalCost > ceil) {
-            const budgetNote = `Note: Your personalized routine ($${finalCost.toFixed(2)}) slightly exceeds your budget ($${ceil}) because we prioritized products that best match your ${userSkinType.toLowerCase()} skin type and your specific concerns. We couldn't find cheaper alternatives that would provide the same quality results while maintaining safety and effectiveness. We recommend keeping this routine for optimal results, but you can adjust your budget if needed.`;
-            EssentialSelector.addUserNote(budgetNote);
-        }
-
-        return ordered;
+        return budgetOptimized;
     }
 
+    /**
+     * Select 3 essentials: cleanser + moisturizer + SPF (prioritize combo moisturizer+SPF)
+     */
+    private static selectEssentials(aiQuiz: AICompatibleQuizModel, safeProducts: Product[]): Product[] {
+        const buckets = ProductCategorizer.bucketByCategory(safeProducts);
+        const essentials: Product[] = [];
+        const routineTime = aiQuiz.preferences.timeCommitment;
+
+        // Get required product count based on routine time (AI docs Rule R1-R3)
+        const getRequiredProductCount = (time: string): { min: number, max: number } => {
+            if (time === "5_minute") return { min: 2, max: 3 };  // Basic routine
+            if (time === "10_minute") return { min: 3, max: 5 }; // Standard routine  
+            if (time === "15+_minute") return { min: 4, max: 6 }; // Comprehensive routine
+            return { min: 3, max: 5 }; // Default to standard
+        };
+
+        const { min: minProducts, max: maxProducts } = getRequiredProductCount(routineTime);
+
+        // 1. ALWAYS select cleanser (MANDATORY - AI docs Rule R4)
+        const bestCleanser = this.selectBestProduct(buckets.cleansers, aiQuiz, "cleanser");
+        if (bestCleanser) {
+            essentials.push(bestCleanser);
+        }
+
+        // 2. PRIORITY: Try combo moisturizer+SPF first (user's preference)
+        const comboProducts = safeProducts.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.includes("moisturize") && steps.includes("protect") && SPFUtils.passesSpfQuality(p);
+        });
+
+        const bestCombo = this.selectBestProduct(comboProducts, aiQuiz, "combo");
+        let hasSpfCoverage = false;
+        let hasMoisturizerCoverage = false;
+
+        if (bestCombo) {
+            essentials.push(bestCombo);
+            hasSpfCoverage = true;
+            hasMoisturizerCoverage = true;
+            console.log(`✅ Found combo product: ${bestCombo.productName}`);
+        } else {
+            // 3. If no combo available, get separate moisturizer and SPF (MANDATORY)
+            const bestMoisturizer = this.selectBestProduct(buckets.moisturizers, aiQuiz, "moisturizer");
+            if (bestMoisturizer) {
+                essentials.push(bestMoisturizer);
+                hasMoisturizerCoverage = true;
+            }
+
+            const bestSPF = this.selectBestProduct(buckets.protects, aiQuiz, "SPF");
+            if (bestSPF) {
+                essentials.push(bestSPF);
+                hasSpfCoverage = true;
+            }
+        }
+
+        // 4. SAFETY CHECK: Ensure we have all essentials (AI docs Rule R4 compliance)
+        if (!hasSpfCoverage || !hasMoisturizerCoverage) {
+            console.log(`⚠️ MISSING ESSENTIAL: SPF=${hasSpfCoverage}, Moisturizer=${hasMoisturizerCoverage}`);
+
+            // Force fallback to ANY available products from all safe products for safety
+            if (!hasMoisturizerCoverage) {
+                const allMoisturizers = safeProducts.filter(p => {
+                    const steps = ProductUtils.productSteps(p);
+                    return steps.includes("moisturize");
+                });
+                if (allMoisturizers.length > 0 && allMoisturizers[0]) {
+                    essentials.push(allMoisturizers[0]);
+                    hasMoisturizerCoverage = true;
+                }
+            }
+            if (!hasSpfCoverage) {
+                const allSPFs = safeProducts.filter(p => {
+                    const steps = ProductUtils.productSteps(p);
+                    return steps.includes("protect") && SPFUtils.passesSpfQuality(p);
+                });
+                if (allSPFs.length > 0 && allSPFs[0]) {
+                    essentials.push(allSPFs[0]);
+                    hasSpfCoverage = true;
+                }
+            }
+        }        // Note: Don't add treatments here - let addTreatments method handle all treatment logic        console.log(`✅ Selected essentials: ${essentials.length} (${essentials.map(p => p.productName).join(', ')})`);
+        return essentials;
+    }
+
+    /**
+     * Add treatments based on routine time and budget (AI docs compliance)
+     */
+    private static addTreatments(aiQuiz: AICompatibleQuizModel, safeProducts: Product[], essentials: Product[]): Product[] {
+        const { ceil } = BudgetManager.getBudgetBounds(aiQuiz);
+        const routineTime = aiQuiz.preferences.timeCommitment;
+
+        // Get target product count for routine time (AI docs Rule R1-R3)
+        const getTargetCount = (time: string): number => {
+            console.log(`🎯 DEBUG TARGET COUNT: Routine time = '${time}'`);
+            if (time === "5_minute") return 3;      // Max 3 for basic
+            if (time === "10_minute") return 4;     // Target 4 for standard  
+            if (time === "15+_minute") return 5;    // Target 5 for comprehensive
+            return 4; // Default
+        };
+
+        const targetCount = getTargetCount(routineTime);
+
+        // If we already have enough products, return
+        if (essentials.length >= targetCount) {
+            return essentials;
+        }
+
+        const buckets = ProductCategorizer.bucketByCategory(safeProducts);
+        const existingIds = new Set(essentials.map(p => p.productId));
+        const availableTreatments = buckets.treats.filter(t => !existingIds.has(t.productId));
+
+        // Add treatments until we reach target count or budget limit
+        let currentCost = ProductUtils.totalCost(essentials);
+        const results = [...essentials];
+
+        while (results.length < targetCount && availableTreatments.length > 0 && currentCost < ceil * 0.9) {
+            const nextTreatment = this.selectBestProduct(availableTreatments, aiQuiz, "treatment");
+
+            if (nextTreatment && (currentCost + (nextTreatment.price || 0)) <= ceil) {
+                results.push(nextTreatment);
+                currentCost += (nextTreatment.price || 0);
+
+                // Remove from available to avoid duplicates
+                const index = availableTreatments.findIndex(t => t.productId === nextTreatment.productId);
+                if (index > -1) availableTreatments.splice(index, 1);
+
+                console.log(`✅ Added treatment: ${nextTreatment.productName} ($${nextTreatment.price}) - Total: ${results.length}/${targetCount}`);
+            } else {
+                break; // Can't add more within budget
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * Single isBestProductForUser function - apply everywhere
+     */
+    private static selectBestProduct(candidates: Product[], aiQuiz: AICompatibleQuizModel, category: string): Product | null {
+        if (candidates.length === 0) return null;
+
+        // Apply premium criteria to all candidates
+        const premiumCandidates = candidates.filter(p => DbService.isBestProductForUser(p, aiQuiz));
+
+        if (premiumCandidates.length > 0) {
+            // Score premium products
+            const scored = premiumCandidates
+                .map(p => ({
+                    product: p,
+                    score: ConcernScorer.scoreForConcerns(p, aiQuiz)
+                }))
+                .sort((a, b) => b.score - a.score);
+
+            if (scored.length > 0 && scored[0]) {
+                return scored[0].product;
+            }
+        }
+
+        // Fallback: Select best basic product that meets all conditions
+        const scored = candidates
+            .map(p => ({
+                product: p,
+                score: ConcernScorer.scoreForConcerns(p, aiQuiz)
+            }))
+            .sort((a, b) => b.score - a.score);
+
+        if (scored.length > 0 && scored[0]) {
+            return scored[0].product;
+        }
+
+        return null;
+    }
+
+    /**
+     * Apply budget optimization
+     */
+    private static optimizeBudget(aiQuiz: AICompatibleQuizModel, products: Product[]): Product[] {
+        const { ceil } = BudgetManager.getBudgetBounds(aiQuiz);
+        const totalCost = ProductUtils.totalCost(products);
+
+        if (totalCost <= ceil) {
+            return products;
+        }
+
+        // If over budget, prioritize essentials
+        const essentials = products.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.includes("cleanse") || steps.includes("moisturize") || steps.includes("protect");
+        });
+
+        return essentials;
+    }
+
+
+    private static userNotes: string[] = [];
 
     static getUserNotes(): string[] {
-        return EssentialSelector.getUserNotes();
+        return this.userNotes.slice();
     }
 
     static clearUserNotes(): void {
-        EssentialSelector.clearUserNotes();
+        this.userNotes = [];
     }
 
     static addUserNote(note: string): void {
-        EssentialSelector.addUserNote(note);
+        if (note && !this.userNotes.includes(note)) {
+            this.userNotes.push(note);
+        }
+    }
+
+    /**
+     * Simple getBestProductsForUser - just return best products
+     */
+    static async getBestProductsForUser(aiQuiz: AICompatibleQuizModel): Promise<Product[]> {
+        try {
+            const allProducts = await DbService.getCachedNotionProducts();
+
+            // 🎯 CATEGORY-SPECIFIC PREMIUM CRITERIA: Use different standards for different product types
+            const bestProducts = allProducts.filter(product => {
+                const steps = ProductUtils.productSteps(product);
+                const isEssential = steps.includes("cleanse") || steps.includes("moisturize") || steps.includes("protect");
+
+                if (isEssential) {
+                    // For essential products: Use relaxed premium criteria to ensure coverage
+                    return this.isRelaxedBestProductForUser(product, aiQuiz);
+                } else {
+                    // For treatments: Use strict premium criteria
+                    return DbService.isBestProductForUser(product, aiQuiz);
+                }
+            });
+
+            console.log(`🎯 Found ${bestProducts.length} premium products for ${aiQuiz.demographics.name}`);
+
+            // 🔍 DEBUG: Show breakdown by category
+            const cleanserCount = bestProducts.filter(p => ProductUtils.productSteps(p).includes("cleanse")).length;
+            const moisturizerCount = bestProducts.filter(p => ProductUtils.productSteps(p).includes("moisturize")).length;
+            const spfCount = bestProducts.filter(p => ProductUtils.productSteps(p).includes("protect")).length;
+            const treatmentCount = bestProducts.filter(p => ProductUtils.productSteps(p).includes("treat")).length;
+
+            console.log(`🎯 BALANCED PREMIUM PRODUCTS: Cleansers=${cleanserCount}, Moisturizers=${moisturizerCount}, SPF=${spfCount}, Treatments=${treatmentCount}`);
+
+            return bestProducts;
+        } catch (error) {
+            console.error('Error getting best products:', error);
+            return [];
+        }
+    }
+
+    /**
+     * COMPREHENSIVE isBestProductForUser logic - apply at every filtering step
+     * Integrates DbService logic directly into ProductFilter
+     */
+    private static isBestProductForUser(product: Product, aiQuiz: AICompatibleQuizModel): boolean {
+        try {
+            // STEP 1: Check if it's a best product (premium ingredients + functions + price)
+            const primaryActives = product.primaryActiveIngredients || [];
+            const functions = product.function || [];
+            const price = product.price || 0;
+
+            const topActives = ["Azelaic Acid", "Retinol", "Vitamin C", "Niacinamide", "Salicylic Acid", "Hyaluronic Acid"];
+            const topFunctions = ["Treat", "Spot Treatment", "Exfoliate", "Protect"];
+
+            const hasTopActive = primaryActives.some(active =>
+                topActives.some(topActive =>
+                    (active.name || "").toLowerCase().includes(topActive.toLowerCase())
+                )
+            );
+
+            const hasTopFunction = functions.some(func =>
+                topFunctions.some(topFunc =>
+                    (func.name || "").includes(topFunc)
+                )
+            );
+
+            const hasPremiumPrice = price >= 18;
+            const hasMultipleActives = primaryActives.length >= 2;
+
+            // Must meet premium criteria first
+            const isBestProduct = (hasTopActive && hasTopFunction) || (hasTopActive && hasPremiumPrice) || (hasTopFunction && hasMultipleActives);
+            if (!isBestProduct) return false;
+
+            // STEP 2: User-specific matching
+            const userSkinType = aiQuiz.skinAssessment.skinType.toLowerCase();
+            const userConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary].map(c => c.toLowerCase());
+            const isSensitive = aiQuiz.skinAssessment.skinSensitivity === "sensitive";
+
+            // STEP 3: Skin type matching
+            const productSkinTypes = (product.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+
+            // STEP 4: Concern matching
+            const productConcerns = (product.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            const concernMatch = userConcerns.some(uc =>
+                productConcerns.some(pc => pc.includes(uc) || uc.includes(pc))
+            );
+
+            // STEP 5: Sensitive skin check
+            if (isSensitive) {
+                const sensitiveFriendly = (product.sensitiveSkinFriendly?.name || "").toLowerCase();
+                if (sensitiveFriendly.includes("no")) return false;
+            }
+
+            return skinTypeMatch && concernMatch;
+
+        } catch (error) {
+            console.error('Error checking if product is best for user:', error);
+            return false;
+        }
+    }
+
+    /**
+     * 🎯 RELAXED PREMIUM CRITERIA - For fallback essential products (cleanser, moisturizer, SPF)
+     */
+    private static isRelaxedBestProductForUser(product: Product, aiQuiz: AICompatibleQuizModel): boolean {
+        try {
+            // STEP 1: Relaxed premium criteria for essential categories
+            const primaryActives = product.primaryActiveIngredients || [];
+            const functions = product.function || [];
+            const price = product.price || 0;
+
+            const topActives = ["Azelaic Acid", "Retinol", "Vitamin C", "Niacinamide", "Salicylic Acid", "Hyaluronic Acid"];
+            const topFunctions = ["Treat", "Spot Treatment", "Exfoliate", "Protect"];
+
+            const hasTopActive = primaryActives.some(active =>
+                topActives.some(topActive =>
+                    (active.name || "").toLowerCase().includes(topActive.toLowerCase())
+                )
+            );
+
+            const hasTopFunction = functions.some(func =>
+                topFunctions.some(topFunc =>
+                    (func.name || "").includes(topFunc)
+                )
+            );
+
+            const hasPremiumPrice = price >= 18;
+            const hasMultipleActives = primaryActives.length >= 2;
+
+            // 🎯 RELAXED CRITERIA: Category-specific premium requirements
+            const steps = ProductUtils.productSteps(product);
+            const isCleanser = steps.includes("cleanse");
+            const isMoisturizerOrSPF = steps.includes("moisturize") || steps.includes("protect");
+            const isTreatment = steps.includes("treat");
+
+            let isBestProduct: boolean;
+            if (isCleanser) {
+                // For cleansers: VERY LENIENT - any premium criteria OR decent price OR good functions
+                isBestProduct = hasTopActive || hasTopFunction || hasPremiumPrice || hasMultipleActives || price >= 8 || functions.length > 0;
+            } else if (isMoisturizerOrSPF) {
+                // For moisturizers/SPF: Moderate criteria - any premium criteria OR decent price
+                isBestProduct = hasTopActive || hasTopFunction || hasPremiumPrice || hasMultipleActives || price >= 12;
+            } else {
+                // For treatments: Standard premium criteria (less strict than main pipeline)
+                isBestProduct = hasTopActive || hasTopFunction || hasPremiumPrice || hasMultipleActives;
+            }
+
+            if (!isBestProduct) return false;
+
+            // STEP 2: User-specific matching (same as strict version)
+            const userSkinType = aiQuiz.skinAssessment.skinType.toLowerCase();
+            const userConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary].map(c => c.toLowerCase());
+            const isSensitive = aiQuiz.skinAssessment.skinSensitivity === "sensitive";
+
+            // STEP 3: Skin type matching
+            const productSkinTypes = (product.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+
+            // STEP 4: Concern matching
+            const productConcerns = (product.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            const concernMatch = userConcerns.some(uc =>
+                productConcerns.some(pc => pc.includes(uc) || uc.includes(pc))
+            );
+
+            // STEP 5: Sensitive skin check
+            if (isSensitive) {
+                const sensitiveFriendly = (product.sensitiveSkinFriendly?.name || "").toLowerCase();
+                if (sensitiveFriendly.includes("no")) return false;
+            }
+
+            return skinTypeMatch && concernMatch;
+
+        } catch (error) {
+            console.error('Error checking if product is relaxed best for user:', error);
+            return false;
+        }
+    }
+
+    static getBestProductsFromCache(aiQuiz: AICompatibleQuizModel): Product[] {
+        try {
+            const bestProducts = DbService.getBestProductsForProfile(aiQuiz);
+
+            return bestProducts;
+        } catch (error) {
+            console.error('Error getting best products from cache:', error);
+            return [];
+        }
     }
 }
 

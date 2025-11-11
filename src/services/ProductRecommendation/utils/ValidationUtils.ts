@@ -87,22 +87,35 @@ export class ValidationUtils {
     }
 
     static isExfoliating(p: Product): boolean {
-        // 🔧 AI.DOC RULE R6 COMPLIANT: Only AHA/BHA/PHA acids and explicit exfoliant terms
-        const actives = ProductUtils.extractActives(p);
-        const aiDocExfoliants = [
-            "aha", "bha", "glycolic", "salicylic", "lactic", "pha"
-        ];
-        if (actives.some(a => aiDocExfoliants.includes(a))) return true;
+        const functions = p.function || [];
+        const hasExfoliateFunction = functions.some((f: any) => {
+            const funcName = (f.name || "").toLowerCase();
+            return funcName.includes("exfoliate") || funcName.includes("spot treatment");
+        });
+        if (hasExfoliateFunction) return true;
 
-        const text = [
+        const actives = ProductUtils.extractActives(p);
+        const exfoliatingActives = [
+            "aha", "bha", "glycolic", "lactic", "mandelic", "citric", "malic",
+            "salicylic", "betaine salicylate", "pha", "gluconolactone",
+            "azelaic", "azelaic acid", "kojic", "kojic acid", "arbutin",
+            "retinol", "retinal", "retinyl", "retinoate", "granactive retinoid"
+        ];
+        if (actives.some(a => exfoliatingActives.includes(a))) return true;
+
+        const searchableText = [
             p.productName || "",
             p.summary?.plain_text || "",
             ProductUtils.getPrimaryActivesText(p) || "",
-            p.format?.name || ""
+            p.ingredientList?.plain_text || ""
         ].join(" ").toLowerCase();
 
-        // AI.DOC RULE R6: "exfoliant/exfoliating", "peel/peeling", "resurfacing" only
-        return /exfoliat|peel|resurface/.test(text);
+        const hasExfoliantInText = exfoliatingActives.some(ingredient =>
+            searchableText.includes(ingredient)
+        );
+        if (hasExfoliantInText) return true;
+
+        return /exfoliat|peel|resurface/i.test(searchableText);
     }
 
     static respectsExfoliationWith(selection: Product[], candidate?: Product): boolean {

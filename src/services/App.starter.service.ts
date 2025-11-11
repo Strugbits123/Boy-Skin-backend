@@ -15,23 +15,23 @@ class AppStarterService {
         await DbService.startCacheUpdateCron();
 
         // Run client test cases validation
-        // console.log('🧪 Running client test cases validation...');
-        // try {
-        //     await TestDataService.runClientTestCases();
-        //     console.log('✅ Client test cases validation completed!');
-        // } catch (error) {
-        //     console.error('❌ Client test cases failed:', error);
-        //     console.log('⚠️  Server will continue but recommendations may have issues.');
-        // }
+        console.log('🧪 Running client test cases validation...');
+        try {
+            await TestDataService.runClientTestCases();
+            console.log('✅ Client test cases validation completed!');
+        } catch (error) {
+            console.error('❌ Client test cases failed:', error);
+            console.log('⚠️  Server will continue but recommendations may have issues.');
+        }
 
-        // // Quick health check
-        // console.log('🔍 Running quick health check...');
-        // try {
-        //     const healthStatus = await TestDataService.quickHealthCheck();
-        //     console.log(`🏥 System health check: ${healthStatus ? 'PASSED' : 'FAILED'}`);
-        // } catch (error) {
-        //     console.error('❌ Health check failed:', error);
-        // }
+        // Quick health check
+        console.log('🔍 Running quick health check...');
+        try {
+            const healthStatus = await TestDataService.quickHealthCheck();
+            console.log(`🏥 System health check: ${healthStatus ? 'PASSED' : 'FAILED'}`);
+        } catch (error) {
+            console.error('❌ Health check failed:', error);
+        }
     }
 }
 
