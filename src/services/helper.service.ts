@@ -195,7 +195,7 @@ class ValidationService {
             const rangeMatch = age.match(/(\d+)-(\d+)/);
             if (rangeMatch) {
                 const startAge = parseInt(rangeMatch[1] || "0");
-                const endAge = parseInt(rangeMatch[2] || "0");
+                const endAge = parseInt(rangeMatch[2] || "0");                    
                 const avgAge = (startAge + endAge) / 2;
 
                 if (avgAge >= 13 && avgAge <= 17) return "13-17";

@@ -7,7 +7,7 @@ import { SkincareTip } from "../models/tips.model";
 import Product from "../models/product.model";
 
 export const SKINCARE_TIPS: SkincareTip[] = [
-    // CLEANSING TIPS - Skin Type Specific
+    // CLEANSING TIPS - Skin Type Specific` 
     {
         tip: "Wash face in the evening 1x times a day",
         skinTypes: ['dry'],

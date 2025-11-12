@@ -19,8 +19,6 @@ export class ProductFilter {
 
 
     static async prefilterProducts(aiQuiz: AICompatibleQuizModel, allProducts: Product[]): Promise<Product[]> {
-        console.log(`🚀 Starting clean filter with ${allProducts.length} total products`);
-
         this.clearUserNotes();
 
         const essentialProducts = allProducts.filter(p => {
@@ -55,18 +53,28 @@ export class ProductFilter {
         }
 
         const safeProducts = [...safeEssentials, ...safeTreatments];
-        console.log(`✅ Safe products: ${safeProducts.length} (Essentials: ${safeEssentials.length}, Treatments: ${safeTreatments.length})`);
-
         const essentials = this.selectEssentials(aiQuiz, safeProducts);
-        console.log(`✅ Selected essentials: ${essentials.length} (${essentials.map(p => p.productName).join(', ')})`);
-
         const withTreatments = this.addTreatments(aiQuiz, safeProducts, essentials);
-        console.log(`✅ With treatments: ${withTreatments.length}`);
-
         const budgetOptimized = this.optimizeBudget(aiQuiz, withTreatments);
-        console.log(`✅ Final routine: ${budgetOptimized.length} products, Cost: $${ProductUtils.totalCost(budgetOptimized)}`);
 
-        return budgetOptimized;
+        // 🧪 FINAL EXFOLIATION SAFETY CHECK: Remove duplicate exfoliating products
+        const exfoliationSafe = this.enforceExfoliationSafety(budgetOptimized);
+
+        // Final Summary Log
+        const finalCost = ProductUtils.totalCost(exfoliationSafe);
+        const hasCleanser = exfoliationSafe.some(p => ProductUtils.productSteps(p).includes("cleanse"));
+        const hasMoisturizer = exfoliationSafe.some(p => ProductUtils.productSteps(p).includes("moisturize"));
+        const hasSpf = exfoliationSafe.some(p => ProductUtils.productSteps(p).includes("protect"));
+        const essentialsPresent = hasCleanser && hasMoisturizer && hasSpf;
+
+        console.log(`
+====================
+Recommendation Complete for ${aiQuiz.demographics.name}
+==========================
+Final Routine: ${budgetOptimized.length} Products | Cost: $${finalCost} | Essentials Present: ${essentialsPresent}
+        `);
+
+        return exfoliationSafe;
     }
 
     private static selectEssentials(aiQuiz: AICompatibleQuizModel, safeProducts: Product[]): Product[] {
@@ -97,7 +105,6 @@ export class ProductFilter {
 
         if (bestCombo) {
             essentials.push(bestCombo);
-            console.log(`✅ Found combo product: ${bestCombo.productName}`);
             return essentials;
         }
 
@@ -111,7 +118,6 @@ export class ProductFilter {
             essentials.push(bestSPF);
         }
 
-        console.log(`✅ Selected essentials: ${essentials.length} (${essentials.map(p => p.productName).join(', ')})`);
         return essentials;
     }
 
@@ -120,7 +126,7 @@ export class ProductFilter {
         const routineTime = aiQuiz.preferences.timeCommitment;
 
         const getTargetCount = (time: string): number => {
-            console.log(`🎯 DEBUG TARGET COUNT: Routine time = '${time}'`);
+            // console.log(`🎯 DEBUG TARGET COUNT: Routine time = '${time}'`);
             if (time === "5_minute") return 3;
             if (time === "10_minute") return 4;
             if (time === "15+_minute") return 5;
@@ -143,15 +149,15 @@ export class ProductFilter {
         });
 
         if (!hasCleanser || !hasMoisturizer || !hasSPF) {
-            console.log(`🚨 CRITICAL: Essentials incomplete! Cleanser=${hasCleanser}, Moisturizer=${hasMoisturizer}, SPF=${hasSPF}`);
-            console.log(`⚠️ Returning essentials only for safety`);
+            // console.log(`🚨 CRITICAL: Essentials incomplete! Cleanser=${hasCleanser}, Moisturizer=${hasMoisturizer}, SPF=${hasSPF}`);
+            // console.log(`⚠️ Returning essentials only for safety`);
 
             this.addMissingEssentialNotes(hasCleanser, hasMoisturizer, hasSPF, aiQuiz);
 
             return essentials;
         }
 
-        console.log(`✅ SAFETY VALIDATED: All essentials present`);
+        // console.log(`✅ SAFETY VALIDATED: All essentials present`);
 
         if (essentials.length >= targetCount) {
             return essentials;
@@ -170,6 +176,14 @@ export class ProductFilter {
 
         let availableTreatments = buckets.treats.filter(t => !existingIds.has(t.productId));
 
+        // 🔍 DEBUG: Log available treatments for Isabella
+        console.log(`🔍 AVAILABLE TREATMENTS FOR ${aiQuiz.demographics.name}:`);
+        console.log(`Total treatment products: ${availableTreatments.length}`);
+        availableTreatments.forEach((t, i) => {
+            const actives = (t.primaryActiveIngredients || []).map(a => a.name).join(', ');
+            console.log(`${i + 1}. ${t.productName} - $${t.price} (${actives})`);
+        });
+
         let currentCost = ProductUtils.totalCost(essentials);
         const results = [...essentials];
 
@@ -177,7 +191,7 @@ export class ProductFilter {
             const nextTreatment = this.selectBestProduct(availableTreatments, aiQuiz, "treatment", false);
 
             if (!nextTreatment) {
-                console.log(`ℹ️ No more quality treatments available`);
+                // console.log(`ℹ️ No more quality treatments available`);
                 break;
             }
 
@@ -188,23 +202,39 @@ export class ProductFilter {
                 treatmentSteps.includes("protect");
 
             if (isPrimaryEssential) {
-                console.log(`⚠️ Skipping ${nextTreatment.productName} - would create duplicate essential category`);
+                // console.log(`⚠️ Skipping ${nextTreatment.productName} - would create duplicate essential category`);
 
                 const index = availableTreatments.findIndex(t => t.productId === nextTreatment.productId);
                 if (index > -1) availableTreatments.splice(index, 1);
                 continue;
             }
 
-            if ((currentCost + (nextTreatment.price || 0)) <= ceil) {
+            // 🧪 AI.DOC RULE R6: HARD BLOCK duplicate exfoliating products
+            if (!ValidationUtils.respectsExfoliationWith(results, nextTreatment)) {
+                // console.log(`🚫 Skipping ${nextTreatment.productName} - would violate single exfoliation rule`);
+
+                const index = availableTreatments.findIndex(t => t.productId === nextTreatment.productId);
+                if (index > -1) availableTreatments.splice(index, 1);
+                continue;
+            }
+
+            // 🎯 STRICT SKIN TYPE ENFORCEMENT: Block wrong skin type products
+            if (!ProductUtils.productHasSkinType(nextTreatment, aiQuiz.skinAssessment.skinType)) {
+                // console.log(`🚫 Skipping ${nextTreatment.productName} - wrong skin type (user: ${aiQuiz.skinAssessment.skinType})`);
+
+                const index = availableTreatments.findIndex(t => t.productId === nextTreatment.productId);
+                if (index > -1) availableTreatments.splice(index, 1);
+                continue;
+            } if ((currentCost + (nextTreatment.price || 0)) <= ceil) {
                 results.push(nextTreatment);
                 currentCost += (nextTreatment.price || 0);
 
                 const index = availableTreatments.findIndex(t => t.productId === nextTreatment.productId);
                 if (index > -1) availableTreatments.splice(index, 1);
 
-                console.log(`✅ Added treatment: ${nextTreatment.productName} ($${nextTreatment.price}) - Total: ${results.length}/${targetCount}`);
+                // console.log(`✅ Added treatment: ${nextTreatment.productName} ($${nextTreatment.price}) - Total: ${results.length}/${targetCount}`);
             } else {
-                console.log(`💰 Budget limit reached ($${currentCost + (nextTreatment.price || 0)} > $${ceil})`);
+                // console.log(`💰 Budget limit reached ($${currentCost + (nextTreatment.price || 0)} > $${ceil})`);
                 break;
             }
         }
@@ -220,7 +250,7 @@ export class ProductFilter {
     ): Product | null {
         if (candidates.length === 0) {
             if (isEssential) {
-                console.log(`🚨 CRITICAL: No ${category} candidates available!`);
+                // console.log(`🚨 CRITICAL: No ${category} candidates available!`);
             }
             return null;
         }
@@ -236,13 +266,13 @@ export class ProductFilter {
                 .sort((a, b) => b.score - a.score);
 
             if (scored.length > 0 && scored[0]) {
-                console.log(`✅ ${category}: Selected BEST quality - ${scored[0].product.productName}`);
+                // console.log(`✅ ${category}: Selected BEST quality - ${scored[0].product.productName}`);
                 return scored[0].product;
             }
         }
 
         if (isEssential) {
-            console.log(`⚠️ ${category}: No premium available, selecting SAFE fallback`);
+            // console.log(`⚠️ ${category}: No premium available, selecting SAFE fallback`);
 
             const scored = candidates
                 .map(p => ({
@@ -252,7 +282,7 @@ export class ProductFilter {
                 .sort((a, b) => b.score - a.score);
 
             if (scored.length > 0 && scored[0]) {
-                console.log(`✅ ${category}: Safe fallback - ${scored[0].product.productName}`);
+                // console.log(`✅ ${category}: Safe fallback - ${scored[0].product.productName}`);
                 return scored[0].product;
             }
         }
@@ -288,6 +318,33 @@ export class ProductFilter {
         return essentials;
     }
 
+    /**
+     * 🧪 FINAL EXFOLIATION SAFETY: Remove duplicate exfoliating products
+     * Keeps only the best exfoliating product (lowest price/highest value)
+     */
+    private static enforceExfoliationSafety(products: Product[]): Product[] {
+        const exfoliating = products.filter(p => ValidationUtils.isExfoliating(p));
+        const nonExfoliating = products.filter(p => !ValidationUtils.isExfoliating(p));
+
+        if (exfoliating.length <= 1) {
+            return products; // No duplicates, return as-is
+        }
+
+        // Multiple exfoliating products found - keep only the best one
+        console.log(`🚫 FOUND ${exfoliating.length} EXFOLIATING PRODUCTS - REMOVING DUPLICATES:`);
+        exfoliating.forEach(p => console.log(`   - ${p.productName} ($${p.price})`));
+
+        // Keep the one with best value (lowest price for same benefit)
+        const bestExfoliating = exfoliating.reduce((best, current) => {
+            const bestPrice = best.price || 999;
+            const currentPrice = current.price || 999;
+            return currentPrice < bestPrice ? current : best;
+        });
+
+        console.log(`✅ KEEPING: ${bestExfoliating.productName} ($${bestExfoliating.price})`);
+
+        return [...nonExfoliating, bestExfoliating];
+    }
 
     private static userNotes: string[] = [];
 

@@ -18,7 +18,7 @@ export class BudgetManager {
     static getBudgetBounds(aiQuiz: AICompatibleQuizModel): { ceil: number; floor: number } {
         const raw = ProductUtils.parseBudgetToNumber(aiQuiz.preferences.budget);
         const ceil = Math.min(raw, 200);
-        const floor = Math.round((ceil * 0.55) * 100) / 100;
+        const floor = Math.round((ceil * 0.20) * 100) / 100;
         return { ceil, floor };
     }
 
@@ -31,9 +31,9 @@ export class BudgetManager {
 
     static getTierStrategy(tier: 1 | 2 | 3) {
         const strategies = {
-            1: { name: "Low Budget - Essentials Only", targetProducts: [2, 3], targetUtilization: 95, maxTreatments: 0, allowEye: false },
-            2: { name: "Mid Budget - Essentials + Treatment", targetProducts: [3, 4], targetUtilization: 80, maxTreatments: 2, allowEye: false },
-            3: { name: "High Budget - Premium Multi-Treatment", targetProducts: [4, 6], targetUtilization: 85, maxTreatments: 3, allowEye: true }
+            1: { name: "Low Budget - Essentials Only", targetProducts: [2, 3], targetUtilization: 20, maxTreatments: 0, allowEye: false },
+            2: { name: "Mid Budget - Essentials + Treatment", targetProducts: [3, 4], targetUtilization: 20, maxTreatments: 1, allowEye: false },
+            3: { name: "High Budget - Premium Multi-Treatment", targetProducts: [3, 5], targetUtilization: 20, maxTreatments: 2, allowEye: false }
         };
         return strategies[tier];
     }
@@ -132,7 +132,7 @@ export class BudgetManager {
 
         for (const { product, score, price } of scored) {
             if (addedCount >= neededTreatments) break;
-            if (totalSpent + price > budget * 0.95) break; // Keep 5% margin
+            if (totalSpent + price > budget * 0.98) break; // 🎯 IMPROVED: 95% → 98% for better budget usage
 
             enhanced.push(product);
             totalSpent += price;
@@ -323,7 +323,7 @@ export class BudgetManager {
         // console.log(`🎯 TARGET: ${targetTreatments} treatments, ${targetProducts} total products`);
 
         const needsMoreTreatments = treatmentCount < targetTreatments;
-        const lowBudgetUtilization = budgetUtilization < 60;
+        const lowBudgetUtilization = budgetUtilization < 70; // 🎯 IMPROVED: 60% → 70% for better budget usage
 
         const shouldAddTreatments = (total < floor) ||
             (treatmentCount === 0 && userHasConcerns && total < ceil) ||
@@ -430,15 +430,16 @@ export class BudgetManager {
 
                     const ingredientBonus = getIngredientBonus(t, userConcerns);
 
-                    // AI.DOC RULE R6: Boost non-exfoliating treatments for compliance
-                    let exfoliationPenalty = 0;
+                    // AI.DOC RULE R6: HARD BLOCK exfoliating treatments for compliance
                     const isExfoliating = ValidationUtils.isExfoliating(t);
 
                     if (isExfoliating) {
                         if (hasExfoliatingCleanser) {
-                            exfoliationPenalty = -100; // Block completely if cleanser is exfoliating
+                            // Block completely if cleanser is exfoliating
+                            return { t, s: -1000 }; // Will be filtered out
                         } else if (currentExfoliatingTreatments >= 1) {
-                            exfoliationPenalty = -50; // Heavy penalty if already have exfoliating treatment
+                            // HARD BLOCK: Already have exfoliating treatment
+                            return { t, s: -1000 }; // Will be filtered out
                         }
                     } else {
                         // Boost non-exfoliating treatments for high budget users
@@ -447,13 +448,15 @@ export class BudgetManager {
                         }
                     }
 
+                    let exfoliationPenalty = 0; // No penalty needed, using hard blocking above
+
                     const finalScore = baseScore + priorityBoost + ingredientBonus + exfoliationPenalty;
 
                     // console.log(`Treatment scoring: ${t.productName} -> Base: ${baseScore}, Priority: ${priorityBoost}, Ingredient: ${ingredientBonus}, Exfoliation: ${exfoliationPenalty}, Final: ${finalScore}`);
 
                     return { t, s: finalScore };
                 })
-                .filter(item => item.s > -50) // Remove heavily penalized items
+                .filter(item => item.s > -500) // Remove blocked exfoliating items (score -1000)
                 .sort((a, b) => b.s - a.s)
                 .map(x => x.t);
 
@@ -468,6 +471,12 @@ export class BudgetManager {
 
                 if (!ValidationUtils.respectsExfoliationWith(selection, cand)) {
                     // console.log(`   ❌ Failed exfoliation validation`);
+                    continue;
+                }
+
+                // 🎯 STRICT SKIN TYPE ENFORCEMENT: Block wrong skin type products
+                if (!ProductUtils.productHasSkinType(cand, aiQuiz.skinAssessment.skinType)) {
+                    // console.log(`   ❌ Wrong skin type: ${cand.productName} (user: ${aiQuiz.skinAssessment.skinType})`);
                     continue;
                 }
 
@@ -493,7 +502,7 @@ export class BudgetManager {
                     const budgetUtilization = (total / ceil) * 100;
                     const hasMinTreatments = treatmentsAdded >= 1;
                     const reachedTargetTreatments = treatmentsAdded >= targetTreatments;
-                    const reachedBudgetThreshold = budgetUtilization >= 85; // Higher threshold for better budget use
+                    const reachedBudgetThreshold = budgetUtilization >= 75; // 🎯 RELAXED: 85% → 75% for better budget utilization
                     const maxTreatmentsReached = treatmentsAdded >= 3; // Hard cap
 
                     // console.log(`🎯 TREATMENT PROGRESS: ${treatmentsAdded}/${targetTreatments} (Tier ${budgetTier}), Budget: ${budgetUtilization.toFixed(1)}%`);

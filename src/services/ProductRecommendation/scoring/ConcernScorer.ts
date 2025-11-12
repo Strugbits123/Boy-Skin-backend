@@ -78,7 +78,7 @@ export class ConcernScorer {
             const s1 = scoreIngredients(txtPrimary, ingredientMatrix) * weightPrimary;
             const s2 = scoreIngredients(txtAll, ingredientMatrix) * weightAll;
             const base = s1 + s2;
-            const boost = primary.includes(concern) ? 2 : 1; // Primary concerns weighted higher
+            const boost = primary.includes(concern) ? 2.5 : 1.8; // 🎯 FIXED: Secondary concerns get proper priority (1.8x vs 2.5x)
             score += base * boost;
         }
 
