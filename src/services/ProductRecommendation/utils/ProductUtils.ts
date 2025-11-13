@@ -185,11 +185,7 @@ export class ProductUtils {
 
         if (productSkinTypes.length === 0) {
             // Products without skin type specified - assume neutral/all-skin (Rule T3)
-            // 🎯 STRICTER: Only allow if product has gentle characteristics
-            const productName = (p.productName || "").toLowerCase();
-            const summary = (p.summary?.plain_text || "").toLowerCase();
-            const isGentle = productName.includes("gentle") || summary.includes("all skin") || summary.includes("suitable for all");
-            return isGentle;
+            return true;
         }
 
         // Rule T1: Direct exact match
@@ -197,14 +193,14 @@ export class ProductUtils {
             return true;
         }
 
-        // Rule T2: Compatible combinations based on AI.doc matrix - 🎯 STRICTER MATCHING
+        // Rule T2: Compatible combinations based on AI.doc matrix
         const compatibilityMap: { [key: string]: string[] } = {
-            "oily": ["acne-prone", "all skin types", "normal to oily", "oily to normal"],
-            "dry": ["sensitive", "all skin types", "normal to dry", "dry to normal", "mature"], // 🔥 REMOVED "combination" 
-            "combination": ["normal", "all skin types", "normal to combination"],
-            "normal": ["all skin types", "normal to dry", "normal to oily", "normal to combination"],
-            "sensitive": ["dry", "all skin types", "gentle", "hypoallergenic"],
-            "acne-prone": ["oily", "all skin types", "acne"]
+            "oily": ["combination", "acne-prone", "all skin types", "normal to oily"],
+            "dry": ["combination", "sensitive", "all skin types", "normal to dry", "mature"],
+            "combination": ["oily", "normal", "all skin types"],
+            "normal": ["combination", "all skin types"],
+            "sensitive": ["dry", "all skin types", "gentle"],
+            "acne-prone": ["oily", "combination", "all skin types"]
         };
 
         const compatibleTypes = compatibilityMap[st] || [];
@@ -223,10 +219,6 @@ export class ProductUtils {
         }
 
         // Rule T4: Incompatible - reject
-        // 🚫 Log for debugging skin type mismatches
-        if (process.env.DEBUG === 'true') {
-            console.log(`🚫 SKIN TYPE MISMATCH: ${p.productName} (product: [${productSkinTypes.join(', ')}], user: ${st})`);
-        }
         return false;
     }
 

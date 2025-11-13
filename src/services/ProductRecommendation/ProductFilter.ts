@@ -1,6 +1,18 @@
 /**
- * Clean Product Recommendation Filter
- * Simple flow: All Products → Safety → Essentials (with premium criteria) → Treatments → Budget
+ * Product Recommendation Filter
+ * 
+ * Flow: All Products → Safety Filtering → Essentials Selection (3-phase logic) → Treatments (3-phase logic) → Budget Optimization
+ * 
+ * Key Features:
+ * - 3-Phase Selection Logic for Cleanser, Moisturizer, SPF, and Treatments
+ *   Phase 1: Match ALL (primaryActiveIngredients, function, format, skinConcern, strengthRating, skinType)
+ *   Phase 2: Match skinConcern + function only
+ *   Phase 3: Match function + skinConcern only
+ * 
+ * - Budget Management: 20% budget utilization for treatments, essentials can use full budget
+ * - Exfoliation Safety: Only one exfoliating product per routine
+ * - Step Caps: Max 1 cleanser, 1 moisturizer, 1 SPF (combo products prioritized)
+ * - Edge Case Handling: User-friendly notes for phase changes, budget issues, and product availability
  */
 
 import Product from "../../models/product.model";
@@ -19,114 +31,803 @@ export class ProductFilter {
 
 
     static async prefilterProducts(aiQuiz: AICompatibleQuizModel, allProducts: Product[]): Promise<Product[]> {
-        this.clearUserNotes();
+        // console.log(`🚀 Starting clean filter with ${allProducts.length} total products`);
 
-        const essentialProducts = allProducts.filter(p => {
+        this.clearUserNotes();
+        const cleanProducts = allProducts.filter(p => !ProductUtils.hasNonCompatibleConflict(p));
+        // console.log(`Length of clean products: ${cleanProducts.length} | Actual products: ${allProducts.length}`);
+        const allSafetyProducts = cleanProducts.filter(p => !ValidationUtils.violatesSafety(p, aiQuiz));
+        // console.log(`Length of safety products: ${allSafetyProducts.length} | Clean products: ${cleanProducts.length}`);
+        let allSafeProducts = allSafetyProducts.filter(p => ValidationUtils.passesStrengthFilter(p, aiQuiz.skinAssessment.skinType));
+        // console.log(`Length of strength products: ${allSafeProducts.length} | Safety products: ${allSafetyProducts.length}`);
+        allSafeProducts = allSafeProducts.filter(p => ProductUtils.productHasSkinType(p, aiQuiz.skinAssessment.skinType));
+        // console.log(`Length of skin type products: ${allSafeProducts.length} | Safe products: ${allSafeProducts.length}`);
+        if (aiQuiz.skinAssessment.skinSensitivity === "sensitive") {
+            allSafeProducts = allSafeProducts.filter(p => ProductUtils.isSensitiveSafe(p));
+            // console.log(`Length of sensitive products: ${allSafeProducts.length} | Safe products: ${allSafeProducts.length}`);
+        }
+        // console.log(`======================================================================================`);
+        // console.log(`Length of all safe products: ${allSafeProducts.length}`);
+        const allEssentialsProducts = allSafeProducts.filter(p => {
             const steps = ProductUtils.productSteps(p);
             return steps.includes("cleanse") ||
                 steps.includes("moisturize") ||
                 steps.includes("protect");
         });
+        // console.log(`Length of essentials products: ${allEssentialsProducts.length} | Safe products: ${allSafeProducts.length}`);
+        // console.log(`======================================================================================`);
 
-        const treatmentProducts = allProducts.filter(p => {
+        const spfProducts = allEssentialsProducts.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.includes("protect");
+        });
+        // console.log(`All SPF Products (${spfProducts.length}):`);
+        // spfProducts.forEach(p => {
+        //     console.log(`   - ${p.productName} (ID: ${p.productId})`);
+        // });
+
+        const cleanserProducts = allEssentialsProducts.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.includes("cleanse");
+        });
+        // console.log(`All Cleanser Products (${cleanserProducts.length}):`);
+        // cleanserProducts.forEach(p => {
+        //     console.log(`   - ${p.productName} (ID: ${p.productId})`);
+        // });
+
+        const moisturizerProducts = allEssentialsProducts.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.includes("moisturize");
+        });
+        // console.log(`All Moisturizer Products (${moisturizerProducts.length}):`);
+        // moisturizerProducts.forEach(p => {
+        //     console.log(`   - ${p.productName} (ID: ${p.productId})`);
+        // });
+
+        // console.log(`======================================================================================\N`);
+        const allTreatmentsProducts = allSafeProducts.filter(p => {
             const steps = ProductUtils.productSteps(p);
             const isEssential = steps.includes("cleanse") ||
                 steps.includes("moisturize") ||
                 steps.includes("protect");
-            return !isEssential;
+            return !isEssential && steps.includes("treat");
         });
+        // console.log(`All Treatments Products (${allTreatmentsProducts.length}):`);
+        // allTreatmentsProducts.forEach(p => {
+        //     console.log(`   - ${p.productName} (ID: ${p.productId})`);
+        // });
+        // console.log(`======================================================================================\n`);
 
-        let safeEssentials = essentialProducts
-            .filter(p => !ProductUtils.hasNonCompatibleConflict(p))
-            .filter(p => !ValidationUtils.violatesSafety(p, aiQuiz))
-            .filter(p => ValidationUtils.passesStrengthFilter(p, aiQuiz.skinAssessment.skinType));
+        // Step 1: Select essentials using 3-phase logic
+        const selectedEssentials = this.selectEssentials(aiQuiz, allEssentialsProducts);
 
-        let safeTreatments = treatmentProducts
-            .filter(p => !ProductUtils.hasNonCompatibleConflict(p))
-            .filter(p => !ValidationUtils.violatesSafety(p, aiQuiz))
-            .filter(p => ProductUtils.productHasSkinType(p, aiQuiz.skinAssessment.skinType))
-            .filter(p => ValidationUtils.passesStrengthFilter(p, aiQuiz.skinAssessment.skinType));
+        // console.log(`======================================================================================`);
+        // console.log(`Selected Essentials Names & IDs: ${selectedEssentials.length}(${selectedEssentials.map(p => `${p.productName} (ID: ${p.productId})`).join(', ')})`);
+        // console.log(`======================================================================================\n`);
 
-        if (aiQuiz.skinAssessment.skinSensitivity === "sensitive") {
-            safeEssentials = safeEssentials.filter(p => ProductUtils.isSensitiveSafe(p));
-            safeTreatments = safeTreatments.filter(p => ProductUtils.isSensitiveSafe(p));
-        }
+        // Step 2: Add treatments with budget and exfoliation safety
+        const withTreatments = this.addTreatments(aiQuiz, allSafeProducts, selectedEssentials);
+        // console.log(`======================================================================================`);
+        // console.log(`With Treatments Names & IDs: ${withTreatments.length}(${withTreatments.map(p => `${p.productName} (ID: ${p.productId})`).join(', ')})`);
+        // console.log(`======================================================================================\n`);
 
-        const safeProducts = [...safeEssentials, ...safeTreatments];
-        const essentials = this.selectEssentials(aiQuiz, safeProducts);
-        const withTreatments = this.addTreatments(aiQuiz, safeProducts, essentials);
-        const budgetOptimized = this.optimizeBudget(aiQuiz, withTreatments);
+        // Step 3: Final exfoliation safety check
+        const exfoliationSafe = this.enforceExfoliationSafety(withTreatments);
+        // console.log(`======================================================================================`);
+        // console.log(`Exfoliation Safe Names & IDs: ${exfoliationSafe.length}(${exfoliationSafe.map(p => `${p.productName} (ID: ${p.productId})`).join(', ')})`);
+        // console.log(`======================================================================================\n`);
 
-        // 🧪 FINAL EXFOLIATION SAFETY CHECK: Remove duplicate exfoliating products
-        const exfoliationSafe = this.enforceExfoliationSafety(budgetOptimized);
+        // Step 4: Budget optimization (20% cap)
+        const finalRoutine = this.optimizeBudget(aiQuiz, exfoliationSafe);
+        // console.log(`======================================================================================`);
+        // console.log(`Final Routine Names & IDs: ${finalRoutine.length}(${finalRoutine.map(p => `${p.productName} (ID: ${p.productId})`).join(', ')})`);
+        // console.log(`======================================================================================\n`);
 
-        // Final Summary Log
-        const finalCost = ProductUtils.totalCost(exfoliationSafe);
-        const hasCleanser = exfoliationSafe.some(p => ProductUtils.productSteps(p).includes("cleanse"));
-        const hasMoisturizer = exfoliationSafe.some(p => ProductUtils.productSteps(p).includes("moisturize"));
-        const hasSpf = exfoliationSafe.some(p => ProductUtils.productSteps(p).includes("protect"));
-        const essentialsPresent = hasCleanser && hasMoisturizer && hasSpf;
-
-        console.log(`
-====================
-Recommendation Complete for ${aiQuiz.demographics.name}
-==========================
-Final Routine: ${budgetOptimized.length} Products | Cost: $${finalCost} | Essentials Present: ${essentialsPresent}
-        `);
-
-        return exfoliationSafe;
+        return finalRoutine;
     }
 
     private static selectEssentials(aiQuiz: AICompatibleQuizModel, safeProducts: Product[]): Product[] {
         const buckets = ProductCategorizer.bucketByCategory(safeProducts);
         const essentials: Product[] = [];
-        const routineTime = aiQuiz.preferences.timeCommitment;
 
-        const getRequiredProductCount = (time: string): { min: number, max: number } => {
-            if (time === "5_minute") return { min: 2, max: 3 };
-            if (time === "10_minute") return { min: 3, max: 5 };
-            if (time === "15+_minute") return { min: 4, max: 6 };
-            return { min: 3, max: 5 };
-        };
-
-        const { min: minProducts, max: maxProducts } = getRequiredProductCount(routineTime);
-
-        const bestCleanser = this.selectBestProduct(buckets.cleansers, aiQuiz, "cleanser", true);
+        // Step 1: Select cleanser
+        const bestCleanser = this.selectCleanser(buckets.cleansers, aiQuiz);
         if (bestCleanser) {
             essentials.push(bestCleanser);
         }
 
+        // Step 2: Check for combo moisturizer+SPF first
         const comboProducts = safeProducts.filter(p => {
             const steps = ProductUtils.productSteps(p);
             return steps.includes("moisturize") && steps.includes("protect") && SPFUtils.passesSpfQuality(p);
         });
 
-        const bestCombo = this.selectBestProduct(comboProducts, aiQuiz, "combo moisturizer+SPF", true);
+        const bestCombo = this.selectMoisturizer(comboProducts, aiQuiz);
 
         if (bestCombo) {
             essentials.push(bestCombo);
-            return essentials;
+            // console.log(`✅ Found combo product: ${bestCombo.productName}`);
+            return essentials; // Combo found, no need for separate SPF
         }
 
-        const bestMoisturizer = this.selectBestProduct(buckets.moisturizers, aiQuiz, "moisturizer", true);
+        // Step 3: Select separate moisturizer
+        const bestMoisturizer = this.selectMoisturizer(buckets.moisturizers, aiQuiz);
         if (bestMoisturizer) {
             essentials.push(bestMoisturizer);
         }
 
-        const bestSPF = this.selectBestProduct(buckets.protects, aiQuiz, "SPF", true);
+        // Step 4: Select separate SPF (only if combo not found)
+        const bestSPF = this.selectSPF(buckets.protects, aiQuiz);
         if (bestSPF) {
             essentials.push(bestSPF);
         }
 
+        // console.log(`✅ Selected essentials: ${essentials.length}(${essentials.map(p => p.productName).join(', ')})`);
         return essentials;
+    }
+
+    private static selectCleanser(candidates: Product[], aiQuiz: AICompatibleQuizModel): Product | null {
+        if (candidates.length === 0) {
+            // console.log(`🚨 CRITICAL: No cleanser candidates available!`);
+            return null;
+        }
+
+        const userConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary].map(c => c.toLowerCase());
+        const userSkinType = aiQuiz.skinAssessment.skinType.toLowerCase();
+
+        // PHASE 1: Match ALL conditions (primaryActiveIngredients, function, format, skinConcern)
+        const phase1Matches = candidates.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            if (!steps.includes("cleanse")) return false;
+
+            // Check skin type match
+            const productSkinTypes = (p.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+            if (!skinTypeMatch) return false;
+
+            // Check primary active ingredients exist
+            const hasPrimaryActives = (p.primaryActiveIngredients || []).length > 0;
+            if (!hasPrimaryActives) return false;
+
+            // Check function exists
+            const hasFunction = (p.function || []).length > 0;
+            if (!hasFunction) return false;
+
+            // Check format exists
+            const hasFormat = p.format && p.format.name;
+            if (!hasFormat) return false;
+
+            // Check skinConcern matches user concerns
+            const productConcerns = (p.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            const concernMatch = userConcerns.some(uc =>
+                productConcerns.some(pc => pc.includes(uc) || uc.includes(pc))
+            );
+            if (!concernMatch) return false;
+
+            return true;
+        });
+
+        if (phase1Matches.length > 0) {
+            const scored = phase1Matches
+                .map(p => ({
+                    product: p,
+                    score: ConcernScorer.scoreForConcerns(p, aiQuiz)
+                }))
+                .sort((a, b) => b.score - a.score);
+
+            if (scored.length > 0 && scored[0]) {
+                // console.log(`✅ Cleanser Phase 1: Selected - ${scored[0].product.productName}`);
+                return scored[0].product;
+            }
+        }
+
+        // PHASE 2: Match skinConcern + function only (Phase 1 didn't find perfect match)
+        const phase2Matches = candidates.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            if (!steps.includes("cleanse")) return false;
+
+            const productSkinTypes = (p.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+            if (!skinTypeMatch) return false;
+
+            // Check function exists
+            const hasFunction = (p.function || []).length > 0;
+            if (!hasFunction) return false;
+
+            // Check skinConcern matches user concerns
+            const productConcerns = (p.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            const concernMatch = userConcerns.some(uc =>
+                productConcerns.some(pc => pc.includes(uc) || uc.includes(pc))
+            );
+            if (!concernMatch) return false;
+
+            return true;
+        });
+
+        if (phase2Matches.length > 0) {
+            this.addUserNote("We've selected a cleanser that matches your skin concerns and works well for your skin type.");
+            const scored = phase2Matches
+                .map(p => ({
+                    product: p,
+                    score: ConcernScorer.scoreForConcerns(p, aiQuiz)
+                }))
+                .sort((a, b) => b.score - a.score);
+
+            if (scored.length > 0 && scored[0]) {
+                // console.log(`✅ Cleanser Phase 2: Selected - ${scored[0].product.productName}`);
+                return scored[0].product;
+            }
+        }
+
+        // PHASE 3: Match skinConcern only (Phase 1 & 2 didn't find matches)
+        let phase3NoteAdded = false;
+        const phase3Matches = candidates.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            if (!steps.includes("cleanse")) return false;
+
+            const productSkinTypes = (p.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+            if (!skinTypeMatch) return false;
+
+            // Check skinConcern matches user concerns
+            const productConcerns = (p.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            const concernMatch = userConcerns.some(uc =>
+                productConcerns.some(pc => pc.includes(uc) || uc.includes(pc))
+            );
+            if (!concernMatch) return false;
+
+            return true;
+        });
+
+        if (phase3Matches.length > 0) {
+            if (!phase3NoteAdded) {
+                this.addUserNote("We've selected a cleanser that addresses your skin concerns and is suitable for your skin type.");
+                phase3NoteAdded = true;
+            }
+            const scored = phase3Matches
+                .map(p => ({
+                    product: p,
+                    score: ConcernScorer.scoreForConcerns(p, aiQuiz)
+                }))
+                .sort((a, b) => b.score - a.score);
+
+            if (scored.length > 0 && scored[0]) {
+                // console.log(`✅ Cleanser Phase 3: Selected - ${scored[0].product.productName}`);
+                return scored[0].product;
+            }
+        }
+
+        // Fallback: No phase matches - select best available
+        const fallback = this.selectBestProduct(candidates, aiQuiz, "cleanser", true);
+        if (!fallback) {
+            this.addUserNote("We couldn't find a cleanser that perfectly matches all your criteria, but we've selected the best available option for your skin type.");
+        } else {
+            this.addUserNote("We've selected a cleanser that works well for your skin type, though it may not match all your specific concerns perfectly.");
+        }
+        return fallback;
+    }
+
+    private static selectMoisturizer(candidates: Product[], aiQuiz: AICompatibleQuizModel): Product | null {
+        if (candidates.length === 0) {
+            // console.log(`🚨 CRITICAL: No moisturizer candidates available!`);
+            return null;
+        }
+
+        const userConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary].map(c => c.toLowerCase());
+        const userSkinType = aiQuiz.skinAssessment.skinType.toLowerCase();
+
+        // PHASE 1: Match ALL conditions (primaryActiveIngredients, function, format, skinConcern)
+        const phase1Matches = candidates.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            if (!steps.includes("moisturize")) return false;
+
+            // Check skin type match
+            const productSkinTypes = (p.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+            if (!skinTypeMatch) return false;
+
+            // Check primary active ingredients exist
+            const hasPrimaryActives = (p.primaryActiveIngredients || []).length > 0;
+            if (!hasPrimaryActives) return false;
+
+            // Check function exists
+            const hasFunction = (p.function || []).length > 0;
+            if (!hasFunction) return false;
+
+            // Check format exists
+            const hasFormat = p.format && p.format.name;
+            if (!hasFormat) return false;
+
+            // Check skinConcern matches user concerns
+            const productConcerns = (p.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            const concernMatch = userConcerns.some(uc =>
+                productConcerns.some(pc => pc.includes(uc) || uc.includes(pc))
+            );
+            if (!concernMatch) return false;
+
+            return true;
+        });
+
+        if (phase1Matches.length > 0) {
+            const scored = phase1Matches
+                .map(p => ({
+                    product: p,
+                    score: ConcernScorer.scoreForConcerns(p, aiQuiz)
+                }))
+                .sort((a, b) => b.score - a.score);
+
+            if (scored.length > 0 && scored[0]) {
+                // console.log(`✅ Moisturizer Phase 1: Selected - ${scored[0].product.productName}`);
+                return scored[0].product;
+            }
+        }
+
+        // PHASE 2: Match skinConcern + function only (Phase 1 didn't find perfect match)
+        let phase2NoteAdded = false;
+        const phase2Matches = candidates.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            if (!steps.includes("moisturize")) return false;
+
+            const productSkinTypes = (p.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+            if (!skinTypeMatch) return false;
+
+            // Check function exists
+            const hasFunction = (p.function || []).length > 0;
+            if (!hasFunction) return false;
+
+            // Check skinConcern matches user concerns
+            const productConcerns = (p.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            const concernMatch = userConcerns.some(uc =>
+                productConcerns.some(pc => pc.includes(uc) || uc.includes(pc))
+            );
+            if (!concernMatch) return false;
+
+            return true;
+        });
+
+        if (phase2Matches.length > 0) {
+            if (!phase2NoteAdded) {
+                this.addUserNote("We've selected a moisturizer that matches your skin concerns and works well for your skin type.");
+                phase2NoteAdded = true;
+            }
+            const scored = phase2Matches
+                .map(p => ({
+                    product: p,
+                    score: ConcernScorer.scoreForConcerns(p, aiQuiz)
+                }))
+                .sort((a, b) => b.score - a.score);
+
+            if (scored.length > 0 && scored[0]) {
+                // console.log(`✅ Moisturizer Phase 2: Selected - ${scored[0].product.productName}`);
+                return scored[0].product;
+            }
+        }
+
+        // PHASE 3: Match skinConcern only (Phase 1 & 2 didn't find matches)
+        let phase3NoteAdded = false;
+        const phase3Matches = candidates.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            if (!steps.includes("moisturize")) return false;
+
+            const productSkinTypes = (p.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+            if (!skinTypeMatch) return false;
+
+            // Check skinConcern matches user concerns
+            const productConcerns = (p.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            const concernMatch = userConcerns.some(uc =>
+                productConcerns.some(pc => pc.includes(uc) || uc.includes(pc))
+            );
+            if (!concernMatch) return false;
+
+            return true;
+        });
+
+        if (phase3Matches.length > 0) {
+            if (!phase3NoteAdded) {
+                this.addUserNote("We've selected a moisturizer that addresses your skin concerns and is suitable for your skin type.");
+                phase3NoteAdded = true;
+            }
+            const scored = phase3Matches
+                .map(p => ({
+                    product: p,
+                    score: ConcernScorer.scoreForConcerns(p, aiQuiz)
+                }))
+                .sort((a, b) => b.score - a.score);
+
+            if (scored.length > 0 && scored[0]) {
+                // console.log(`✅ Moisturizer Phase 3: Selected - ${scored[0].product.productName}`);
+                return scored[0].product;
+            }
+        }
+
+        // Fallback: No phase matches - select best available
+        const fallback = this.selectBestProduct(candidates, aiQuiz, "moisturizer", true);
+        if (!fallback) {
+            this.addUserNote("We couldn't find a moisturizer that perfectly matches all your criteria, but we've selected the best available option for your skin type.");
+        } else {
+            this.addUserNote("We've selected a moisturizer that works well for your skin type, though it may not match all your specific concerns perfectly.");
+        }
+        return fallback;
+    }
+
+    private static selectSPF(candidates: Product[], aiQuiz: AICompatibleQuizModel): Product | null {
+        if (candidates.length === 0) {
+            // console.log(`🚨 CRITICAL: No SPF candidates available!`);
+            return null;
+        }
+
+        // Filter only standalone SPF (not combo with moisturizer)
+        const standaloneSPF = candidates.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.includes("protect") && !steps.includes("moisturize") && SPFUtils.passesSpfQuality(p);
+        });
+
+        if (standaloneSPF.length === 0) {
+            // console.log(`⚠️ No standalone SPF available`);
+            return null;
+        }
+
+        const userConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary].map(c => c.toLowerCase());
+        const userSkinType = aiQuiz.skinAssessment.skinType.toLowerCase();
+
+        // PHASE 1: Match ALL conditions (primaryActiveIngredients, function, format, skinConcern)
+        const phase1Matches = standaloneSPF.filter(p => {
+            // Check skin type match
+            const productSkinTypes = (p.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+            if (!skinTypeMatch) return false;
+
+            // Check primary active ingredients exist
+            const hasPrimaryActives = (p.primaryActiveIngredients || []).length > 0;
+            if (!hasPrimaryActives) return false;
+
+            // Check function exists
+            const hasFunction = (p.function || []).length > 0;
+            if (!hasFunction) return false;
+
+            // Check format exists
+            const hasFormat = p.format && p.format.name;
+            if (!hasFormat) return false;
+
+            // Check skinConcern matches user concerns
+            const productConcerns = (p.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            const concernMatch = userConcerns.some(uc =>
+                productConcerns.some(pc => pc.includes(uc) || uc.includes(pc))
+            );
+            if (!concernMatch) return false;
+
+            return true;
+        });
+
+        if (phase1Matches.length > 0) {
+            const scored = phase1Matches
+                .map(p => ({
+                    product: p,
+                    score: ConcernScorer.scoreForConcerns(p, aiQuiz)
+                }))
+                .sort((a, b) => b.score - a.score);
+
+            if (scored.length > 0 && scored[0]) {
+                // console.log(`✅ SPF Phase 1: Selected - ${scored[0].product.productName}`);
+                return scored[0].product;
+            }
+        }
+
+        // PHASE 2: Match skinConcern + function only (Phase 1 didn't find perfect match)
+        let phase2NoteAdded = false;
+        const phase2Matches = standaloneSPF.filter(p => {
+            const productSkinTypes = (p.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+            if (!skinTypeMatch) return false;
+
+            // Check function exists
+            const hasFunction = (p.function || []).length > 0;
+            if (!hasFunction) return false;
+
+            // Check skinConcern matches user concerns
+            const productConcerns = (p.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            const concernMatch = userConcerns.some(uc =>
+                productConcerns.some(pc => pc.includes(uc) || uc.includes(pc))
+            );
+            if (!concernMatch) return false;
+
+            return true;
+        });
+
+        if (phase2Matches.length > 0) {
+            if (!phase2NoteAdded) {
+                this.addUserNote("We've selected a sunscreen that matches your skin concerns and provides excellent protection for your skin type.");
+                phase2NoteAdded = true;
+            }
+            const scored = phase2Matches
+                .map(p => ({
+                    product: p,
+                    score: ConcernScorer.scoreForConcerns(p, aiQuiz)
+                }))
+                .sort((a, b) => b.score - a.score);
+
+            if (scored.length > 0 && scored[0]) {
+                // console.log(`✅ SPF Phase 2: Selected - ${scored[0].product.productName}`);
+                return scored[0].product;
+            }
+        }
+
+        // PHASE 3: Match skinConcern only (Phase 1 & 2 didn't find matches)
+        let phase3NoteAdded = false;
+        const phase3Matches = standaloneSPF.filter(p => {
+            const productSkinTypes = (p.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+            if (!skinTypeMatch) return false;
+
+            // Check skinConcern matches user concerns
+            const productConcerns = (p.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            const concernMatch = userConcerns.some(uc =>
+                productConcerns.some(pc => pc.includes(uc) || uc.includes(pc))
+            );
+            if (!concernMatch) return false;
+
+            return true;
+        });
+
+        if (phase3Matches.length > 0) {
+            if (!phase3NoteAdded) {
+                this.addUserNote("We've selected a sunscreen that addresses your skin concerns and provides excellent protection for your skin type.");
+                phase3NoteAdded = true;
+            }
+            const scored = phase3Matches
+                .map(p => ({
+                    product: p,
+                    score: ConcernScorer.scoreForConcerns(p, aiQuiz)
+                }))
+                .sort((a, b) => b.score - a.score);
+
+            if (scored.length > 0 && scored[0]) {
+                // console.log(`✅ SPF Phase 3: Selected - ${scored[0].product.productName}`);
+                return scored[0].product;
+            }
+        }
+
+        // Fallback: No phase matches - select best available
+        const fallback = this.selectBestProduct(standaloneSPF, aiQuiz, "SPF", true);
+        if (!fallback) {
+            this.addUserNote("We couldn't find a sunscreen that perfectly matches all your criteria, but we've selected the best available option for your skin type.");
+        } else {
+            this.addUserNote("We've selected a sunscreen that works well for your skin type, though it may not match all your specific concerns perfectly.");
+        }
+        return fallback;
+    }
+
+    private static selectTreatment(candidates: Product[], aiQuiz: AICompatibleQuizModel, existingProducts: Product[]): Product | null {
+        if (candidates.length === 0) {
+            return null;
+        }
+
+        const userConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary].map(c => c.toLowerCase());
+        const userSkinType = aiQuiz.skinAssessment.skinType.toLowerCase();
+        const primaryConcernsCount = aiQuiz.concerns.primary.length;
+
+        // Helper: Count how many user concerns match product concerns
+        const countConcernMatches = (p: Product): number => {
+            const productConcerns = (p.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            let matches = 0;
+            for (const uc of userConcerns) {
+                if (productConcerns.some(pc => {
+                    // Handle variations: "fine lines" matches "wrinkles", "dark circles" matches "dark circles"
+                    if (uc.includes("fine line") && (pc.includes("wrinkle") || pc.includes("fine line"))) return true;
+                    if (uc.includes("dark circle") && pc.includes("dark circle")) return true;
+                    if (uc.includes("dry") && pc.includes("dry")) return true;
+                    return pc.includes(uc) || uc.includes(pc);
+                })) {
+                    matches++;
+                }
+            }
+            return matches;
+        };
+
+        // PHASE 1: Match ALL conditions + STRICT concern matching
+        const phase1Matches = candidates.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            if (!steps.some(s => s.includes("treat"))) return false;
+
+            // Check skin type match
+            const productSkinTypes = (p.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+            if (!skinTypeMatch) return false;
+
+            // Check primary active ingredients exist
+            const hasPrimaryActives = (p.primaryActiveIngredients || []).length > 0;
+            if (!hasPrimaryActives) return false;
+
+            // Check function exists
+            const hasFunction = (p.function || []).length > 0;
+            if (!hasFunction) return false;
+
+            // Check format exists
+            const hasFormat = p.format && p.format.name;
+            if (!hasFormat) return false;
+
+            // Check strengthRating exists
+            const hasStrengthRating = (p.strengthRatingOfActives || []).length > 0;
+            if (!hasStrengthRating) return false;
+
+            // STRICT: Check skinConcern matches - must match at least 2 concerns OR be best product
+            const concernMatches = countConcernMatches(p);
+            const isBestProduct = DbService.isBestProductForUser(p, aiQuiz);
+
+            // Require at least 2 concern matches OR be a best product
+            if (concernMatches < 2 && !isBestProduct) return false;
+
+            return true;
+        });
+
+        if (phase1Matches.length > 0) {
+            // Score and prioritize best products
+            const scored = phase1Matches
+                .map(p => {
+                    const baseScore = ConcernScorer.scoreForTreatmentOnly(p, aiQuiz);
+                    const concernMatches = countConcernMatches(p);
+                    const isBestProduct = DbService.isBestProductForUser(p, aiQuiz);
+
+                    // Boost score for multiple concern matches and best products
+                    let bonus = 0;
+                    if (concernMatches >= 2) bonus += 10; // Multiple concerns matched
+                    if (concernMatches >= primaryConcernsCount) bonus += 20; // All primary concerns matched
+                    if (isBestProduct) bonus += 15; // Best product bonus
+
+                    return {
+                        product: p,
+                        score: baseScore + bonus,
+                        concernMatches,
+                        isBestProduct
+                    };
+                })
+                .sort((a, b) => {
+                    // First sort by best product status
+                    if (a.isBestProduct && !b.isBestProduct) return -1;
+                    if (!a.isBestProduct && b.isBestProduct) return 1;
+                    // Then by concern matches
+                    if (a.concernMatches !== b.concernMatches) return b.concernMatches - a.concernMatches;
+                    // Finally by score
+                    return b.score - a.score;
+                });
+
+            if (scored.length > 0 && scored[0]) {
+                // console.log(`✅ Treatment Phase 1: Selected - ${scored[0].product.productName} (Concerns: ${scored[0].concernMatches}, Best: ${scored[0].isBestProduct})`);
+                return scored[0].product;
+            }
+        }
+
+        // PHASE 2: Match skinConcern + function only (Phase 1 didn't find perfect match)
+        let phase2NoteAdded = false;
+        const phase2Matches = candidates.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            if (!steps.some(s => s.includes("treat"))) return false;
+
+            const productSkinTypes = (p.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+            if (!skinTypeMatch) return false;
+
+            // Check function exists
+            const hasFunction = (p.function || []).length > 0;
+            if (!hasFunction) return false;
+
+            // Check skinConcern matches user concerns (at least 1 match)
+            const concernMatches = countConcernMatches(p);
+            if (concernMatches < 1) return false;
+
+            return true;
+        });
+
+        if (phase2Matches.length > 0) {
+            const scored = phase2Matches
+                .map(p => {
+                    const baseScore = ConcernScorer.scoreForTreatmentOnly(p, aiQuiz);
+                    const concernMatches = countConcernMatches(p);
+                    const isBestProduct = DbService.isBestProductForUser(p, aiQuiz);
+
+                    let bonus = 0;
+                    if (concernMatches >= 2) bonus += 10;
+                    if (isBestProduct) bonus += 15;
+
+                    return {
+                        product: p,
+                        score: baseScore + bonus,
+                        concernMatches,
+                        isBestProduct
+                    };
+                })
+                .sort((a, b) => {
+                    if (a.isBestProduct && !b.isBestProduct) return -1;
+                    if (!a.isBestProduct && b.isBestProduct) return 1;
+                    if (a.concernMatches !== b.concernMatches) return b.concernMatches - a.concernMatches;
+                    return b.score - a.score;
+                });
+
+            if (scored.length > 0 && scored[0]) {
+                if (!phase2NoteAdded) {
+                    this.addUserNote("We've selected a treatment that matches your skin concerns and works well for your skin type.");
+                    phase2NoteAdded = true;
+                }
+                // console.log(`✅ Treatment Phase 2: Selected - ${scored[0].product.productName} (Concerns: ${scored[0].concernMatches}, Best: ${scored[0].isBestProduct})`);
+                return scored[0].product;
+            }
+        }
+
+        // PHASE 3: Match function + skinConcern only (Phase 1 & 2 didn't find matches)
+        let phase3NoteAdded = false;
+        const phase3Matches = candidates.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            if (!steps.some(s => s.includes("treat"))) return false;
+
+            const productSkinTypes = (p.skinType || []).map(st => (st.name || "").toLowerCase());
+            const skinTypeMatch = productSkinTypes.some(pst => pst.includes(userSkinType));
+            if (!skinTypeMatch) return false;
+
+            // Check function exists
+            const hasFunction = (p.function || []).length > 0;
+            if (!hasFunction) return false;
+
+            // Check skinConcern matches user concerns (at least 1 match)
+            const concernMatches = countConcernMatches(p);
+            if (concernMatches < 1) return false;
+
+            return true;
+        });
+
+        if (phase3Matches.length > 0) {
+            const scored = phase3Matches
+                .map(p => {
+                    const baseScore = ConcernScorer.scoreForTreatmentOnly(p, aiQuiz);
+                    const concernMatches = countConcernMatches(p);
+                    const isBestProduct = DbService.isBestProductForUser(p, aiQuiz);
+
+                    let bonus = 0;
+                    if (concernMatches >= 1) bonus += 5;
+                    if (isBestProduct) bonus += 10;
+
+                    return {
+                        product: p,
+                        score: baseScore + bonus,
+                        concernMatches,
+                        isBestProduct
+                    };
+                })
+                .sort((a, b) => {
+                    if (a.isBestProduct && !b.isBestProduct) return -1;
+                    if (!a.isBestProduct && b.isBestProduct) return 1;
+                    if (a.concernMatches !== b.concernMatches) return b.concernMatches - a.concernMatches;
+                    return b.score - a.score;
+                });
+
+            if (scored.length > 0 && scored[0]) {
+                if (!phase3NoteAdded) {
+                    this.addUserNote("We've selected a treatment that addresses your skin concerns and is suitable for your skin type.");
+                    phase3NoteAdded = true;
+                }
+                // console.log(`✅ Treatment Phase 3: Selected - ${scored[0].product.productName} (Concerns: ${scored[0].concernMatches}, Best: ${scored[0].isBestProduct})`);
+                return scored[0].product;
+            }
+        }
+
+        // Fallback: No phase matches - select best available
+        const fallback = this.selectBestProduct(candidates, aiQuiz, "treatment", false);
+        if (!fallback) {
+            this.addUserNote("We couldn't find a treatment product that perfectly matches all your criteria. We've prioritized safety and compatibility over adding more products.");
+        } else {
+            this.addUserNote("We've selected a treatment that works well for your skin type, though it may not match all your specific concerns perfectly.");
+        }
+        return fallback;
     }
 
     private static addTreatments(aiQuiz: AICompatibleQuizModel, safeProducts: Product[], essentials: Product[]): Product[] {
         const { ceil } = BudgetManager.getBudgetBounds(aiQuiz);
+        // User requirement: Treatments should add up to 20% of total budget
+        const targetBudgetForTreatments = ceil * 0.20;
         const routineTime = aiQuiz.preferences.timeCommitment;
 
         const getTargetCount = (time: string): number => {
-            // console.log(`🎯 DEBUG TARGET COUNT: Routine time = '${time}'`);
             if (time === "5_minute") return 3;
             if (time === "10_minute") return 4;
             if (time === "15+_minute") return 5;
@@ -134,6 +835,12 @@ Final Routine: ${budgetOptimized.length} Products | Cost: $${finalCost} | Essent
         };
 
         const targetCount = getTargetCount(routineTime);
+        const essentialsCost = ProductUtils.totalCost(essentials);
+
+        // console.log(`\nADD TREATMENTS DEBUG:`);
+        // console.log(`Full Budget: $${ceil}, Target for Treatments (20%): $${targetBudgetForTreatments.toFixed(2)}`);
+        // console.log(`Essentials Cost: $${essentialsCost.toFixed(2)}`);
+        // console.log(`Target Count: ${targetCount}, Current Count: ${essentials.length}`);
 
         const hasCleanser = essentials.some(p => {
             const steps = ProductUtils.productSteps(p);
@@ -149,96 +856,182 @@ Final Routine: ${budgetOptimized.length} Products | Cost: $${finalCost} | Essent
         });
 
         if (!hasCleanser || !hasMoisturizer || !hasSPF) {
-            // console.log(`🚨 CRITICAL: Essentials incomplete! Cleanser=${hasCleanser}, Moisturizer=${hasMoisturizer}, SPF=${hasSPF}`);
-            // console.log(`⚠️ Returning essentials only for safety`);
-
+            // console.log(`CRITICAL: Essentials incomplete! Cleanser = ${hasCleanser}, Moisturizer = ${hasMoisturizer}, SPF = ${hasSPF}`);
             this.addMissingEssentialNotes(hasCleanser, hasMoisturizer, hasSPF, aiQuiz);
-
             return essentials;
         }
-
-        // console.log(`✅ SAFETY VALIDATED: All essentials present`);
 
         if (essentials.length >= targetCount) {
+            // console.log(`Already reached target count (${essentials.length} >= ${targetCount})`);
             return essentials;
         }
 
-        const existingCategories = new Set<string>();
-        essentials.forEach(p => {
-            const steps = ProductUtils.productSteps(p);
-            if (steps.includes("cleanse")) existingCategories.add("cleanse");
-            if (steps.includes("moisturize")) existingCategories.add("moisturize");
-            if (steps.includes("protect")) existingCategories.add("protect");
-        });
+        // No budget cap for essentials - they can use whatever they need
+        // But total cost (essentials + treatments) must not exceed full budget
 
         const buckets = ProductCategorizer.bucketByCategory(safeProducts);
         const existingIds = new Set(essentials.map(p => p.productId));
 
         let availableTreatments = buckets.treats.filter(t => !existingIds.has(t.productId));
+        // console.log(`Available Treatments: ${availableTreatments.length}`);
 
-        // 🔍 DEBUG: Log available treatments for Isabella
-        console.log(`🔍 AVAILABLE TREATMENTS FOR ${aiQuiz.demographics.name}:`);
-        console.log(`Total treatment products: ${availableTreatments.length}`);
-        availableTreatments.forEach((t, i) => {
-            const actives = (t.primaryActiveIngredients || []).map(a => a.name).join(', ');
-            console.log(`${i + 1}. ${t.productName} - $${t.price} (${actives})`);
+        // Check if cleanser is exfoliating
+        const cleanserIsExfoliating = essentials.some(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.includes("cleanse") && ValidationUtils.isExfoliating(p);
         });
+        // console.log(`Cleanser is exfoliating: ${cleanserIsExfoliating}`);
 
-        let currentCost = ProductUtils.totalCost(essentials);
+        let treatmentsCost = 0;
         const results = [...essentials];
+        let attempts = 0;
+        const maxAttempts = availableTreatments.length;
+        let currentPhase = 1;
+        let phaseChanged = false;
 
-        while (results.length < targetCount && availableTreatments.length > 0 && currentCost < ceil * 0.9) {
-            const nextTreatment = this.selectBestProduct(availableTreatments, aiQuiz, "treatment", false);
+        // Add treatments up to 20% of budget, but ensure total doesn't exceed full budget
+        while (results.length < targetCount && availableTreatments.length > 0 && attempts < maxAttempts) {
+            attempts++;
+
+            // Filter out products that violate safety rules
+            let filteredTreatments = availableTreatments.filter(t => {
+                const treatmentSteps = ProductUtils.productSteps(t);
+                const isPrimaryEssential =
+                    treatmentSteps.includes("cleanse") ||
+                    treatmentSteps.includes("moisturize") ||
+                    treatmentSteps.includes("protect");
+
+                if (isPrimaryEssential) return false;
+
+                // AI.DOC Rule R6: Exfoliation Safety Check
+                if (!ValidationUtils.respectsExfoliationWith(results, t)) return false;
+
+                // If cleanser is exfoliating, block all exfoliating treatments
+                if (cleanserIsExfoliating && ValidationUtils.isExfoliating(t)) return false;
+
+                return true;
+            });
+
+            if (filteredTreatments.length === 0) {
+                // console.log(`No more safe treatments available`);
+                if (!phaseChanged) {
+                    phaseChanged = true;
+                    this.addUserNote("We've carefully selected treatments that work safely with your routine. Some products couldn't be added due to ingredient compatibility and safety considerations.");
+                }
+                break;
+            }
+
+            const nextTreatment = this.selectTreatment(filteredTreatments, aiQuiz, results);
 
             if (!nextTreatment) {
-                // console.log(`ℹ️ No more quality treatments available`);
+                // console.log(`No more treatments available from selectTreatment`);
+                if (!phaseChanged) {
+                    phaseChanged = true;
+                    this.addUserNote("We've prioritized finding the best treatments for your specific skin concerns. Some products weren't included to ensure optimal compatibility and effectiveness.");
+                }
                 break;
             }
 
-            const treatmentSteps = ProductUtils.productSteps(nextTreatment);
-            const isPrimaryEssential =
-                treatmentSteps.includes("cleanse") ||
-                treatmentSteps.includes("moisturize") ||
-                treatmentSteps.includes("protect");
+            const treatmentPrice = nextTreatment.price || 0;
+            const isBestProduct = DbService.isBestProductForUser(nextTreatment, aiQuiz);
 
-            if (isPrimaryEssential) {
-                // console.log(`⚠️ Skipping ${nextTreatment.productName} - would create duplicate essential category`);
-
-                const index = availableTreatments.findIndex(t => t.productId === nextTreatment.productId);
-                if (index > -1) availableTreatments.splice(index, 1);
-                continue;
+            // Count concern matches for this treatment
+            const userConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary].map(c => c.toLowerCase());
+            const productConcerns = (nextTreatment.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+            let concernMatches = 0;
+            for (const uc of userConcerns) {
+                if (productConcerns.some(pc => {
+                    if (uc.includes("fine line") && (pc.includes("wrinkle") || pc.includes("fine line"))) return true;
+                    if (uc.includes("dark circle") && pc.includes("dark circle")) return true;
+                    if (uc.includes("dry") && pc.includes("dry")) return true;
+                    return pc.includes(uc) || uc.includes(pc);
+                })) {
+                    concernMatches++;
+                }
             }
 
-            // 🧪 AI.DOC RULE R6: HARD BLOCK duplicate exfoliating products
-            if (!ValidationUtils.respectsExfoliationWith(results, nextTreatment)) {
-                // console.log(`🚫 Skipping ${nextTreatment.productName} - would violate single exfoliation rule`);
+            // Check: treatments should not exceed 20% of budget AND total should not exceed full budget
+            const newTreatmentsCost = treatmentsCost + treatmentPrice;
+            const newTotalCost = essentialsCost + newTreatmentsCost;
 
-                const index = availableTreatments.findIndex(t => t.productId === nextTreatment.productId);
-                if (index > -1) availableTreatments.splice(index, 1);
-                continue;
-            }
+            // If it's a best product OR matches 2+ concerns but exceeds 20% cap, still add it with a note
+            const isHighQualityMatch = isBestProduct || concernMatches >= 2;
 
-            // 🎯 STRICT SKIN TYPE ENFORCEMENT: Block wrong skin type products
-            if (!ProductUtils.productHasSkinType(nextTreatment, aiQuiz.skinAssessment.skinType)) {
-                // console.log(`🚫 Skipping ${nextTreatment.productName} - wrong skin type (user: ${aiQuiz.skinAssessment.skinType})`);
+            // Check if we've already exceeded 20% cap with high quality products
+            const alreadyExceededCap = treatmentsCost > targetBudgetForTreatments;
 
-                const index = availableTreatments.findIndex(t => t.productId === nextTreatment.productId);
-                if (index > -1) availableTreatments.splice(index, 1);
-                continue;
-            } if ((currentCost + (nextTreatment.price || 0)) <= ceil) {
+            // Check if we can add this treatment
+            if (newTotalCost > ceil) {
+                // Cannot exceed full budget - stop adding treatments
+                // console.log(`Budget limit: Cannot add ${nextTreatment.productName} - total would exceed full budget ($${newTotalCost.toFixed(2)} > $${ceil})`);
+                break;
+            } else if (isHighQualityMatch && newTreatmentsCost > targetBudgetForTreatments) {
+                // High quality match - add even if exceeds 20% cap (as long as within full budget)
                 results.push(nextTreatment);
-                currentCost += (nextTreatment.price || 0);
+                treatmentsCost = newTreatmentsCost;
+                // console.log(`Added HIGH QUALITY treatment (exceeds 20% cap): ${nextTreatment.productName} ($${treatmentPrice}) - Concerns: ${concernMatches}, Best: ${isBestProduct} - Treatments: $${treatmentsCost.toFixed(2)}/${targetBudgetForTreatments.toFixed(2)}, Total: $${newTotalCost.toFixed(2)}/${ceil}`);
+
+                if (!phaseChanged) {
+                    phaseChanged = true;
+                    this.addUserNote("We've included premium treatment products that are specifically formulated for your skin concerns. While they use slightly more of your budget, they provide superior results for your needs.");
+                }
 
                 const index = availableTreatments.findIndex(t => t.productId === nextTreatment.productId);
                 if (index > -1) availableTreatments.splice(index, 1);
+                // Continue loop to try adding more treatments
+            } else if (newTreatmentsCost <= targetBudgetForTreatments) {
+                // Regular treatment within 20% cap - add it
+                results.push(nextTreatment);
+                treatmentsCost = newTreatmentsCost;
+                // console.log(`Added treatment: ${nextTreatment.productName} ($${treatmentPrice}) - Concerns: ${concernMatches}, Best: ${isBestProduct} - Treatments: $${treatmentsCost.toFixed(2)}/${targetBudgetForTreatments.toFixed(2)}, Total: $${newTotalCost.toFixed(2)}/${ceil}`);
 
-                // console.log(`✅ Added treatment: ${nextTreatment.productName} ($${nextTreatment.price}) - Total: ${results.length}/${targetCount}`);
+                const index = availableTreatments.findIndex(t => t.productId === nextTreatment.productId);
+                if (index > -1) availableTreatments.splice(index, 1);
+                // Continue loop to try adding more treatments
+            } else if (alreadyExceededCap) {
+                // We've already exceeded 20% cap with high quality products
+                // Now allow adding more treatments as long as total stays within full budget
+                results.push(nextTreatment);
+                treatmentsCost = newTreatmentsCost;
+                // console.log(`Added treatment (after exceeding 20% cap): ${nextTreatment.productName} ($${treatmentPrice}) - Concerns: ${concernMatches}, Best: ${isBestProduct} - Treatments: $${treatmentsCost.toFixed(2)}/${targetBudgetForTreatments.toFixed(2)}, Total: $${newTotalCost.toFixed(2)}/${ceil}`);
+
+                const index = availableTreatments.findIndex(t => t.productId === nextTreatment.productId);
+                if (index > -1) availableTreatments.splice(index, 1);
+                // Continue loop to try adding more treatments
             } else {
-                // console.log(`💰 Budget limit reached ($${currentCost + (nextTreatment.price || 0)} > $${ceil})`);
-                break;
+                // Low quality match that exceeds 20% cap - skip it but continue trying others
+                // console.log(`Skipping ${nextTreatment.productName} - exceeds 20% cap ($${newTreatmentsCost.toFixed(2)} > $${targetBudgetForTreatments.toFixed(2)}) and not high quality match`);
+                const index = availableTreatments.findIndex(t => t.productId === nextTreatment.productId);
+                if (index > -1) availableTreatments.splice(index, 1);
+                // Continue loop to try other treatments
             }
         }
 
+        const finalTotalCost = essentialsCost + treatmentsCost;
+        const budgetUtilization = (finalTotalCost / ceil) * 100;
+        const targetUtilization = 20;
+
+        // Edge case: Budget exceeds due to best products
+        if (finalTotalCost > ceil * 0.9 && !phaseChanged) {
+            this.addUserNote("We've prioritized selecting the best quality products for your skin type and concerns. The recommended products are carefully chosen to provide optimal results, which is why we're utilizing more of your budget.");
+        }
+
+        // Edge case: Budget utilization is low
+        if (budgetUtilization < targetUtilization && !phaseChanged) {
+            this.addUserNote("We've carefully selected high-quality products that best match your skin type and concerns. While we could add more products to use your full budget, we've prioritized giving you the most effective routine with products that work well together. Quality over quantity ensures better results for your skin.");
+        }
+
+        // Edge case: Couldn't reach target count
+        if (results.length < targetCount && !phaseChanged) {
+            this.addUserNote("We've selected the best products available for your skin type and concerns. Some products weren't included to ensure safety, compatibility, and optimal results.");
+        }
+
+        // Edge case: No treatments added due to budget constraints
+        if (treatmentsCost === 0 && results.length === essentials.length && !phaseChanged) {
+            this.addUserNote("We've focused on selecting the best essential products for your routine. Additional treatments weren't included to stay within your budget while ensuring you have a complete and effective skincare routine.");
+        }
+
+        // console.log(`Final: ${results.length} products, Total Cost: $${finalTotalCost.toFixed(2)}/${ceil} (${budgetUtilization.toFixed(1)}%), Treatments: $${treatmentsCost.toFixed(2)}/${targetBudgetForTreatments.toFixed(2)}\n`);
         return results;
     }
 
@@ -298,53 +1091,96 @@ Final Routine: ${budgetOptimized.length} Products | Cost: $${finalCost} | Essent
             return scored[0].product;
         }
 
-        console.log(`ℹ️ ${category}: No suitable products found`);
+        // console.log(`ℹ️ ${category}: No suitable products found`);
         return null;
+    }
+
+    private static enforceExfoliationSafety(products: Product[]): Product[] {
+        const cleansers = products.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.includes("cleanse") && !steps.some(s => s.includes("treat"));
+        });
+
+        const treatments = products.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            return steps.some(s => s.includes("treat")) && !steps.includes("cleanse");
+        });
+
+        const exfoliatingCleansers = cleansers.filter(p => ValidationUtils.isExfoliating(p));
+        const exfoliatingTreatments = treatments.filter(p => ValidationUtils.isExfoliating(p));
+
+        const totalExfoliating = exfoliatingCleansers.length + exfoliatingTreatments.length;
+
+        if (totalExfoliating <= 1) {
+            return products; // Already compliant
+        }
+
+        // AI.DOC Rule R6: Prefer exfoliating treatment over exfoliating cleanser
+        if (exfoliatingTreatments.length > 0) {
+            // Keep treatments, remove exfoliating cleansers
+            const nonExfoliatingCleansers = cleansers.filter(p => !ValidationUtils.isExfoliating(p));
+            const otherProducts = products.filter(p => {
+                const steps = ProductUtils.productSteps(p);
+                return !steps.includes("cleanse") && !steps.some(s => s.includes("treat"));
+            });
+            return [...nonExfoliatingCleansers, ...treatments, ...otherProducts];
+        } else {
+            // Keep first exfoliating cleanser, remove others
+            const firstExfoliatingCleanser = exfoliatingCleansers[0];
+            const nonExfoliatingCleansers = cleansers.filter(p => !ValidationUtils.isExfoliating(p));
+            const otherProducts = products.filter(p => {
+                const steps = ProductUtils.productSteps(p);
+                return !steps.includes("cleanse") && !steps.some(s => s.includes("treat"));
+            });
+            return firstExfoliatingCleanser
+                ? [...nonExfoliatingCleansers, firstExfoliatingCleanser, ...treatments, ...otherProducts]
+                : [...nonExfoliatingCleansers, ...treatments, ...otherProducts];
+        }
     }
 
     private static optimizeBudget(aiQuiz: AICompatibleQuizModel, products: Product[]): Product[] {
         const { ceil } = BudgetManager.getBudgetBounds(aiQuiz);
         const totalCost = ProductUtils.totalCost(products);
 
+        // Total cost should not exceed full budget
         if (totalCost <= ceil) {
             return products;
         }
 
+        // Remove treatments until under full budget (essentials protected)
         const essentials = products.filter(p => {
             const steps = ProductUtils.productSteps(p);
             return steps.includes("cleanse") || steps.includes("moisturize") || steps.includes("protect");
         });
 
-        return essentials;
-    }
-
-    /**
-     * 🧪 FINAL EXFOLIATION SAFETY: Remove duplicate exfoliating products
-     * Keeps only the best exfoliating product (lowest price/highest value)
-     */
-    private static enforceExfoliationSafety(products: Product[]): Product[] {
-        const exfoliating = products.filter(p => ValidationUtils.isExfoliating(p));
-        const nonExfoliating = products.filter(p => !ValidationUtils.isExfoliating(p));
-
-        if (exfoliating.length <= 1) {
-            return products; // No duplicates, return as-is
-        }
-
-        // Multiple exfoliating products found - keep only the best one
-        console.log(`🚫 FOUND ${exfoliating.length} EXFOLIATING PRODUCTS - REMOVING DUPLICATES:`);
-        exfoliating.forEach(p => console.log(`   - ${p.productName} ($${p.price})`));
-
-        // Keep the one with best value (lowest price for same benefit)
-        const bestExfoliating = exfoliating.reduce((best, current) => {
-            const bestPrice = best.price || 999;
-            const currentPrice = current.price || 999;
-            return currentPrice < bestPrice ? current : best;
+        const treatments = products.filter(p => {
+            const steps = ProductUtils.productSteps(p);
+            return !steps.includes("cleanse") && !steps.includes("moisturize") && !steps.includes("protect");
         });
 
-        console.log(`✅ KEEPING: ${bestExfoliating.productName} ($${bestExfoliating.price})`);
+        let essentialsCost = ProductUtils.totalCost(essentials);
+        if (essentialsCost > ceil) {
+            return essentials; // Even essentials exceed full budget, return essentials only
+        }
 
-        return [...nonExfoliating, bestExfoliating];
+        // Remove treatments starting with cheapest until under full budget
+        const sortedTreatments = [...treatments].sort((a, b) => (a.price || 0) - (b.price || 0));
+        const selectedTreatments: Product[] = [];
+        let currentCost = essentialsCost;
+
+        for (const treatment of sortedTreatments) {
+            const treatmentPrice = treatment.price || 0;
+            if (currentCost + treatmentPrice <= ceil) {
+                selectedTreatments.push(treatment);
+                currentCost += treatmentPrice;
+            } else {
+                break;
+            }
+        }
+
+        return [...essentials, ...selectedTreatments];
     }
+
 
     private static userNotes: string[] = [];
 
@@ -358,7 +1194,8 @@ Final Routine: ${budgetOptimized.length} Products | Cost: $${finalCost} | Essent
 
     static addUserNote(note: string): void {
         if (note && !this.userNotes.includes(note)) {
-            this.userNotes.push(note);
+            const formattedNote = note.startsWith("Note: ") ? note : `Note: ${note}`;
+            this.userNotes.push(formattedNote);
         }
     }
 
@@ -417,9 +1254,6 @@ Final Routine: ${budgetOptimized.length} Products | Cost: $${finalCost} | Essent
         });
     }
 
-    /**
-     * Simple getBestProductsForUser - just return best products
-     */
     static async getBestProductsForUser(aiQuiz: AICompatibleQuizModel): Promise<Product[]> {
         try {
             const allProducts = await DbService.getCachedNotionProducts();
@@ -438,7 +1272,7 @@ Final Routine: ${budgetOptimized.length} Products | Cost: $${finalCost} | Essent
                 }
             });
 
-            console.log(`🎯 Found ${bestProducts.length} premium products for ${aiQuiz.demographics.name}`);
+            // console.log(`🎯 Found ${bestProducts.length} premium products for ${aiQuiz.demographics.name}`);
 
             // 🔍 DEBUG: Show breakdown by category
             const cleanserCount = bestProducts.filter(p => ProductUtils.productSteps(p).includes("cleanse")).length;
@@ -446,19 +1280,15 @@ Final Routine: ${budgetOptimized.length} Products | Cost: $${finalCost} | Essent
             const spfCount = bestProducts.filter(p => ProductUtils.productSteps(p).includes("protect")).length;
             const treatmentCount = bestProducts.filter(p => ProductUtils.productSteps(p).includes("treat")).length;
 
-            console.log(`🎯 BALANCED PREMIUM PRODUCTS: Cleansers=${cleanserCount}, Moisturizers=${moisturizerCount}, SPF=${spfCount}, Treatments=${treatmentCount}`);
+            // console.log(`🎯 BALANCED PREMIUM PRODUCTS: Cleansers=${cleanserCount}, Moisturizers=${moisturizerCount}, SPF=${spfCount}, Treatments=${treatmentCount}`);
 
             return bestProducts;
         } catch (error) {
-            console.error('Error getting best products:', error);
+            // console.error('Error getting best products:', error);
             return [];
         }
     }
 
-    /**
-     * COMPREHENSIVE isBestProductForUser logic - apply at every filtering step
-     * Integrates DbService logic directly into ProductFilter
-     */
     private static isBestProductForUser(product: Product, aiQuiz: AICompatibleQuizModel): boolean {
         try {
             // STEP 1: Check if it's a best product (premium ingredients + functions + price)
@@ -512,14 +1342,11 @@ Final Routine: ${budgetOptimized.length} Products | Cost: $${finalCost} | Essent
             return skinTypeMatch && concernMatch;
 
         } catch (error) {
-            console.error('Error checking if product is best for user:', error);
+            // console.error('Error checking if product is best for user:', error);
             return false;
         }
     }
 
-    /**
-     * 🎯 RELAXED PREMIUM CRITERIA - For fallback essential products (cleanser, moisturizer, SPF)
-     */
     private static isRelaxedBestProductForUser(product: Product, aiQuiz: AICompatibleQuizModel): boolean {
         try {
             // STEP 1: Relaxed premium criteria for essential categories
@@ -589,7 +1416,7 @@ Final Routine: ${budgetOptimized.length} Products | Cost: $${finalCost} | Essent
             return skinTypeMatch && concernMatch;
 
         } catch (error) {
-            console.error('Error checking if product is relaxed best for user:', error);
+            // console.error('Error checking if product is relaxed best for user:', error);
             return false;
         }
     }
@@ -600,7 +1427,7 @@ Final Routine: ${budgetOptimized.length} Products | Cost: $${finalCost} | Essent
 
             return bestProducts;
         } catch (error) {
-            console.error('Error getting best products from cache:', error);
+            // console.error('Error getting best products from cache:', error);
             return [];
         }
     }

@@ -174,16 +174,18 @@ class ValidationService {
         // Enhanced sensitivity mapping
         const mapSensitivity = (sensitivity: string): "sensitive" | "not sensitive" => {
             const normalized = sensitivity.toLowerCase().trim();
+            if (normalized === "not sensitive skin") { return "not sensitive"; }
+            if (normalized === "sensitive skin") { return "sensitive"; }
 
-            const sensitiveKeywords = ["sensitive", "very sensitive", "extremely sensitive", "reactive", "sensitive skin"];
-            const notSensitiveKeywords = ["not sensitive", "not sensitive skin", "resistant", "tough", "normal"];
+            // const sensitiveKeywords = ["sensitive", "very sensitive", "extremely sensitive", "reactive", "sensitive skin"];
+            // const notSensitiveKeywords = ["not sensitive", "not sensitive skin", "resistant", "tough", "normal"];
 
-            if (sensitiveKeywords.some(keyword => normalized.includes(keyword))) {
-                return "sensitive";
-            }
-            if (notSensitiveKeywords.some(keyword => normalized.includes(keyword))) {
-                return "not sensitive";
-            }
+            // if (sensitiveKeywords.some(keyword => normalized.includes(keyword))) {
+            //     return "sensitive";
+            // }
+            // if (notSensitiveKeywords.some(keyword => normalized.includes(keyword))) {
+            //     return "not sensitive";
+            // }
 
             // Default fallback based on skin type
             return "not sensitive";
@@ -195,7 +197,7 @@ class ValidationService {
             const rangeMatch = age.match(/(\d+)-(\d+)/);
             if (rangeMatch) {
                 const startAge = parseInt(rangeMatch[1] || "0");
-                const endAge = parseInt(rangeMatch[2] || "0");                    
+                const endAge = parseInt(rangeMatch[2] || "0");
                 const avgAge = (startAge + endAge) / 2;
 
                 if (avgAge >= 13 && avgAge <= 17) return "13-17";

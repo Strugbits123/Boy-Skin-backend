@@ -365,9 +365,9 @@ class RecommendationService {
 
             const filteredCandidates = await ProductFilter.prefilterProducts(aiQuiz, allProducts);
 
-            // console.log('\n==================');
-            // console.log(`Products Recommended for ${quiz.Name}`);
-            // console.log('==================\n');
+            console.log('\n==================');
+            console.log(`Products Recommended for ${quiz.Name}`);
+            console.log('==================\n');
 
             const userNotes = ProductFilter.getUserNotes();
 

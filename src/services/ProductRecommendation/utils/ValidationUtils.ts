@@ -129,35 +129,13 @@ export class ValidationUtils {
     }
 
     static isExfoliating(p: Product): boolean {
+        // Only check function field for exfoliation detection
         const functions = p.function || [];
         const hasExfoliateFunction = functions.some((f: any) => {
             const funcName = (f.name || "").toLowerCase();
             return funcName.includes("exfoliate") || funcName.includes("spot treatment");
         });
-        if (hasExfoliateFunction) return true;
-
-        const actives = ProductUtils.extractActives(p);
-        const exfoliatingActives = [
-            "aha", "bha", "glycolic", "lactic", "mandelic", "citric", "malic",
-            "salicylic", "betaine salicylate", "pha", "gluconolactone",
-            "azelaic", "azelaic acid", "kojic", "kojic acid", "arbutin",
-            "retinol", "retinal", "retinyl", "retinoate", "granactive retinoid"
-        ];
-        if (actives.some(a => exfoliatingActives.includes(a))) return true;
-
-        const searchableText = [
-            p.productName || "",
-            p.summary?.plain_text || "",
-            ProductUtils.getPrimaryActivesText(p) || "",
-            p.ingredientList?.plain_text || ""
-        ].join(" ").toLowerCase();
-
-        const hasExfoliantInText = exfoliatingActives.some(ingredient =>
-            searchableText.includes(ingredient)
-        );
-        if (hasExfoliantInText) return true;
-
-        return /exfoliat|peel|resurface/i.test(searchableText);
+        return hasExfoliateFunction;
     }
 
     static respectsExfoliationWith(selection: Product[], candidate?: Product): boolean {
