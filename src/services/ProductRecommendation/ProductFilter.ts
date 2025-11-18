@@ -28,6 +28,7 @@ import DbService from "../db.service";
 
 export class ProductFilter {
 
+    
 
 
     static async prefilterProducts(aiQuiz: AICompatibleQuizModel, allProducts: Product[]): Promise<Product[]> {
