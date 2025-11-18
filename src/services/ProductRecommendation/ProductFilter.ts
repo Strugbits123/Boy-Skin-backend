@@ -57,41 +57,41 @@ export class ProductFilter {
         // console.log(`Length of essentials products: ${allEssentialsProducts.length} | Safe products: ${allSafeProducts.length}`);
         // console.log(`======================================================================================`);
 
-        const spfProducts = allEssentialsProducts.filter(p => {
-            const steps = ProductUtils.productSteps(p);
-            return steps.includes("protect");
-        });
+        // const spfProducts = allEssentialsProducts.filter(p => {
+        //     const steps = ProductUtils.productSteps(p);
+        //     return steps.includes("protect");
+        // });
         // console.log(`All SPF Products (${spfProducts.length}):`);
         // spfProducts.forEach(p => {
         //     console.log(`   - ${p.productName} (ID: ${p.productId})`);
         // });
 
-        const cleanserProducts = allEssentialsProducts.filter(p => {
-            const steps = ProductUtils.productSteps(p);
-            return steps.includes("cleanse");
-        });
+        // const cleanserProducts = allEssentialsProducts.filter(p => {
+        //     const steps = ProductUtils.productSteps(p);
+        //     return steps.includes("cleanse");
+        // });
         // console.log(`All Cleanser Products (${cleanserProducts.length}):`);
         // cleanserProducts.forEach(p => {
         //     console.log(`   - ${p.productName} (ID: ${p.productId})`);
         // });
 
-        const moisturizerProducts = allEssentialsProducts.filter(p => {
-            const steps = ProductUtils.productSteps(p);
-            return steps.includes("moisturize");
-        });
+        // const moisturizerProducts = allEssentialsProducts.filter(p => {
+        //     const steps = ProductUtils.productSteps(p);
+        //     return steps.includes("moisturize");
+        // });
         // console.log(`All Moisturizer Products (${moisturizerProducts.length}):`);
         // moisturizerProducts.forEach(p => {
         //     console.log(`   - ${p.productName} (ID: ${p.productId})`);
         // });
 
         // console.log(`======================================================================================\N`);
-        const allTreatmentsProducts = allSafeProducts.filter(p => {
-            const steps = ProductUtils.productSteps(p);
-            const isEssential = steps.includes("cleanse") ||
-                steps.includes("moisturize") ||
-                steps.includes("protect");
-            return !isEssential && steps.includes("treat");
-        });
+        // const allTreatmentsProducts = allSafeProducts.filter(p => {
+        //     const steps = ProductUtils.productSteps(p);
+        //     const isEssential = steps.includes("cleanse") ||
+        //         steps.includes("moisturize") ||
+        //         steps.includes("protect");
+        //     return !isEssential && steps.includes("treat");
+        // });
         // console.log(`All Treatments Products (${allTreatmentsProducts.length}):`);
         // allTreatmentsProducts.forEach(p => {
         //     console.log(`   - ${p.productName} (ID: ${p.productId})`);
@@ -123,6 +123,8 @@ export class ProductFilter {
         // console.log(`Final Routine Names & IDs: ${finalRoutine.length}(${finalRoutine.map(p => `${p.productName} (ID: ${p.productId})`).join(', ')})`);
         // console.log(`======================================================================================\n`);
 
+
+        await Promise.resolve(setTimeout(() => { }, 3000));
         return finalRoutine;
     }
 
@@ -130,43 +132,61 @@ export class ProductFilter {
         const buckets = ProductCategorizer.bucketByCategory(safeProducts);
         const essentials: Product[] = [];
 
+        // Get budget tier
+        const { ceil } = BudgetManager.getBudgetBounds(aiQuiz);
+        const budgetTier = BudgetManager.getBudgetTier(ceil);
+        const essentialCaps = BudgetManager.getEssentialCaps(ceil);
+
         // Step 1: Select cleanser
-        const bestCleanser = this.selectCleanser(buckets.cleansers, aiQuiz);
+        const bestCleanser = this.selectCleanser(buckets.cleansers, aiQuiz, essentialCaps.cleanser);
         if (bestCleanser) {
             essentials.push(bestCleanser);
         }
 
-        // Step 2: Check for combo moisturizer+SPF first
-        const comboProducts = safeProducts.filter(p => {
-            const steps = ProductUtils.productSteps(p);
-            return steps.includes("moisturize") && steps.includes("protect") && SPFUtils.passesSpfQuality(p);
-        });
-
-        const bestCombo = this.selectMoisturizer(comboProducts, aiQuiz);
-
-        if (bestCombo) {
-            essentials.push(bestCombo);
-            // console.log(`✅ Found combo product: ${bestCombo.productName}`);
-            return essentials; // Combo found, no need for separate SPF
+        // Budget-based logic for moisturizer + SPF selection
+        if (budgetTier === 1) {
+            // Low budget: Prefer combo moisturizer-SPF
+            const comboProducts = safeProducts.filter(p => {
+                const steps = ProductUtils.productSteps(p);
+                return steps.includes("moisturize") && steps.includes("protect") && SPFUtils.passesSpfQuality(p);
+            });
+            const bestCombo = this.selectMoisturizer(comboProducts, aiQuiz, essentialCaps.combo);
+            if (bestCombo) {
+                essentials.push(bestCombo);
+                return essentials; // Combo found, no need for separate SPF
+            }
         }
 
-        // Step 3: Select separate moisturizer
-        const bestMoisturizer = this.selectMoisturizer(buckets.moisturizers, aiQuiz);
+        // High budget: Prefer separate moisturizer + SPF
+        // Step 2: Select separate moisturizer
+        const bestMoisturizer = this.selectMoisturizer(buckets.moisturizers, aiQuiz, essentialCaps.moisturizer);
         if (bestMoisturizer) {
             essentials.push(bestMoisturizer);
         }
 
-        // Step 4: Select separate SPF (only if combo not found)
-        const bestSPF = this.selectSPF(buckets.protects, aiQuiz);
+        // Step 3: Select separate SPF
+        const bestSPF = this.selectSPF(buckets.protects, aiQuiz, essentialCaps.protect);
         if (bestSPF) {
             essentials.push(bestSPF);
         }
 
-        // console.log(`✅ Selected essentials: ${essentials.length}(${essentials.map(p => p.productName).join(', ')})`);
+        // If mid/low budget and combo not found, fallback to separate
+        if (budgetTier === 1 && essentials.length < 3) {
+            // Try to add missing essentials if combo not found
+            if (!bestMoisturizer && buckets.moisturizers.length > 0) {
+                const fallbackMoist = this.selectMoisturizer(buckets.moisturizers, aiQuiz, essentialCaps.moisturizer);
+                if (fallbackMoist) essentials.push(fallbackMoist);
+            }
+            if (!bestSPF && buckets.protects.length > 0) {
+                const fallbackSPF = this.selectSPF(buckets.protects, aiQuiz, essentialCaps.protect);
+                if (fallbackSPF) essentials.push(fallbackSPF);
+            }
+        }
+
         return essentials;
     }
 
-    private static selectCleanser(candidates: Product[], aiQuiz: AICompatibleQuizModel): Product | null {
+    private static selectCleanser(candidates: Product[], aiQuiz: AICompatibleQuizModel, priceCap?: number): Product | null {
         if (candidates.length === 0) {
             // console.log(`🚨 CRITICAL: No cleanser candidates available!`);
             return null;
@@ -215,9 +235,10 @@ export class ProductFilter {
                 }))
                 .sort((a, b) => b.score - a.score);
 
-            if (scored.length > 0 && scored[0]) {
-                // console.log(`✅ Cleanser Phase 1: Selected - ${scored[0].product.productName}`);
-                return scored[0].product;
+            const picked = this.pickAffordableProduct(scored, priceCap, "cleanser");
+            if (picked) {
+                // console.log(`✅ Cleanser Phase 1: Selected - ${picked.productName}`);
+                return picked;
             }
         }
 
@@ -253,9 +274,10 @@ export class ProductFilter {
                 }))
                 .sort((a, b) => b.score - a.score);
 
-            if (scored.length > 0 && scored[0]) {
-                // console.log(`✅ Cleanser Phase 2: Selected - ${scored[0].product.productName}`);
-                return scored[0].product;
+            const picked = this.pickAffordableProduct(scored, priceCap, "cleanser");
+            if (picked) {
+                // console.log(`✅ Cleanser Phase 2: Selected - ${picked.productName}`);
+                return picked;
             }
         }
 
@@ -291,14 +313,15 @@ export class ProductFilter {
                 }))
                 .sort((a, b) => b.score - a.score);
 
-            if (scored.length > 0 && scored[0]) {
-                // console.log(`✅ Cleanser Phase 3: Selected - ${scored[0].product.productName}`);
-                return scored[0].product;
+            const picked = this.pickAffordableProduct(scored, priceCap, "cleanser");
+            if (picked) {
+                // console.log(`✅ Cleanser Phase 3: Selected - ${picked.productName}`);
+                return picked;
             }
         }
 
         // Fallback: No phase matches - select best available
-        const fallback = this.selectBestProduct(candidates, aiQuiz, "cleanser", true);
+        const fallback = this.selectBestProduct(candidates, aiQuiz, "cleanser", true, priceCap);
         if (!fallback) {
             this.addUserNote("We couldn't find a cleanser that perfectly matches all your criteria, but we've selected the best available option for your skin type.");
         } else {
@@ -307,7 +330,7 @@ export class ProductFilter {
         return fallback;
     }
 
-    private static selectMoisturizer(candidates: Product[], aiQuiz: AICompatibleQuizModel): Product | null {
+    private static selectMoisturizer(candidates: Product[], aiQuiz: AICompatibleQuizModel, priceCap?: number): Product | null {
         if (candidates.length === 0) {
             // console.log(`🚨 CRITICAL: No moisturizer candidates available!`);
             return null;
@@ -356,9 +379,10 @@ export class ProductFilter {
                 }))
                 .sort((a, b) => b.score - a.score);
 
-            if (scored.length > 0 && scored[0]) {
-                // console.log(`✅ Moisturizer Phase 1: Selected - ${scored[0].product.productName}`);
-                return scored[0].product;
+            const picked = this.pickAffordableProduct(scored, priceCap, "moisturizer");
+            if (picked) {
+                // console.log(`✅ Moisturizer Phase 1: Selected - ${picked.productName}`);
+                return picked;
             }
         }
 
@@ -398,9 +422,10 @@ export class ProductFilter {
                 }))
                 .sort((a, b) => b.score - a.score);
 
-            if (scored.length > 0 && scored[0]) {
-                // console.log(`✅ Moisturizer Phase 2: Selected - ${scored[0].product.productName}`);
-                return scored[0].product;
+            const picked = this.pickAffordableProduct(scored, priceCap, "moisturizer");
+            if (picked) {
+                // console.log(`✅ Moisturizer Phase 2: Selected - ${picked.productName}`);
+                return picked;
             }
         }
 
@@ -436,14 +461,15 @@ export class ProductFilter {
                 }))
                 .sort((a, b) => b.score - a.score);
 
-            if (scored.length > 0 && scored[0]) {
-                // console.log(`✅ Moisturizer Phase 3: Selected - ${scored[0].product.productName}`);
-                return scored[0].product;
+            const picked = this.pickAffordableProduct(scored, priceCap, "moisturizer");
+            if (picked) {
+                // console.log(`✅ Moisturizer Phase 3: Selected - ${picked.productName}`);
+                return picked;
             }
         }
 
         // Fallback: No phase matches - select best available
-        const fallback = this.selectBestProduct(candidates, aiQuiz, "moisturizer", true);
+        const fallback = this.selectBestProduct(candidates, aiQuiz, "moisturizer", true, priceCap);
         if (!fallback) {
             this.addUserNote("We couldn't find a moisturizer that perfectly matches all your criteria, but we've selected the best available option for your skin type.");
         } else {
@@ -452,7 +478,7 @@ export class ProductFilter {
         return fallback;
     }
 
-    private static selectSPF(candidates: Product[], aiQuiz: AICompatibleQuizModel): Product | null {
+    private static selectSPF(candidates: Product[], aiQuiz: AICompatibleQuizModel, priceCap?: number): Product | null {
         if (candidates.length === 0) {
             // console.log(`🚨 CRITICAL: No SPF candidates available!`);
             return null;
@@ -509,9 +535,10 @@ export class ProductFilter {
                 }))
                 .sort((a, b) => b.score - a.score);
 
-            if (scored.length > 0 && scored[0]) {
-                // console.log(`✅ SPF Phase 1: Selected - ${scored[0].product.productName}`);
-                return scored[0].product;
+            const picked = this.pickAffordableProduct(scored, priceCap, "sunscreen");
+            if (picked) {
+                // console.log(`✅ SPF Phase 1: Selected - ${picked.productName}`);
+                return picked;
             }
         }
 
@@ -548,9 +575,10 @@ export class ProductFilter {
                 }))
                 .sort((a, b) => b.score - a.score);
 
-            if (scored.length > 0 && scored[0]) {
-                // console.log(`✅ SPF Phase 2: Selected - ${scored[0].product.productName}`);
-                return scored[0].product;
+            const picked = this.pickAffordableProduct(scored, priceCap, "sunscreen");
+            if (picked) {
+                // console.log(`✅ SPF Phase 2: Selected - ${picked.productName}`);
+                return picked;
             }
         }
 
@@ -583,14 +611,15 @@ export class ProductFilter {
                 }))
                 .sort((a, b) => b.score - a.score);
 
-            if (scored.length > 0 && scored[0]) {
-                // console.log(`✅ SPF Phase 3: Selected - ${scored[0].product.productName}`);
-                return scored[0].product;
+            const picked = this.pickAffordableProduct(scored, priceCap, "sunscreen");
+            if (picked) {
+                // console.log(`✅ SPF Phase 3: Selected - ${picked.productName}`);
+                return picked;
             }
         }
 
         // Fallback: No phase matches - select best available
-        const fallback = this.selectBestProduct(standaloneSPF, aiQuiz, "SPF", true);
+        const fallback = this.selectBestProduct(standaloneSPF, aiQuiz, "SPF", true, priceCap);
         if (!fallback) {
             this.addUserNote("We couldn't find a sunscreen that perfectly matches all your criteria, but we've selected the best available option for your skin type.");
         } else {
@@ -812,7 +841,7 @@ export class ProductFilter {
         }
 
         // Fallback: No phase matches - select best available
-        const fallback = this.selectBestProduct(candidates, aiQuiz, "treatment", false);
+        const fallback = this.selectBestProduct(candidates, aiQuiz, "treatment", false, undefined);
         if (!fallback) {
             this.addUserNote("We couldn't find a treatment product that perfectly matches all your criteria. We've prioritized safety and compatibility over adding more products.");
         } else {
@@ -1039,7 +1068,8 @@ export class ProductFilter {
         candidates: Product[],
         aiQuiz: AICompatibleQuizModel,
         category: string,
-        isEssential: boolean = false
+        isEssential: boolean = false,
+        priceCap?: number
     ): Product | null {
         if (candidates.length === 0) {
             if (isEssential) {
@@ -1058,9 +1088,10 @@ export class ProductFilter {
                 }))
                 .sort((a, b) => b.score - a.score);
 
-            if (scored.length > 0 && scored[0]) {
-                // console.log(`✅ ${category}: Selected BEST quality - ${scored[0].product.productName}`);
-                return scored[0].product;
+            const picked = this.pickAffordableProduct(scored, priceCap, category);
+            if (picked) {
+                // console.log(`✅ ${category}: Selected BEST quality - ${picked.productName}`);
+                return picked;
             }
         }
 
@@ -1074,9 +1105,10 @@ export class ProductFilter {
                 }))
                 .sort((a, b) => b.score - a.score);
 
-            if (scored.length > 0 && scored[0]) {
-                // console.log(`✅ ${category}: Safe fallback - ${scored[0].product.productName}`);
-                return scored[0].product;
+            const picked = this.pickAffordableProduct(scored, priceCap, category);
+            if (picked) {
+                // console.log(`✅ ${category}: Safe fallback - ${picked.productName}`);
+                return picked;
             }
         }
 
@@ -1087,12 +1119,44 @@ export class ProductFilter {
             }))
             .sort((a, b) => b.score - a.score);
 
-        if (scored.length > 0 && scored[0]) {
-            return scored[0].product;
+        const fallbackPick = this.pickAffordableProduct(scored, priceCap, category);
+        if (fallbackPick) {
+            return fallbackPick;
         }
 
         // console.log(`ℹ️ ${category}: No suitable products found`);
         return null;
+    }
+
+    private static pickAffordableProduct(
+        scored: { product: Product; score: number; }[],
+        priceCap?: number,
+        stepLabel?: string
+    ): Product | null {
+        if (scored.length === 0) return null;
+
+        const withinCap = priceCap
+            ? scored.filter(item => (item.product.price || 0) <= priceCap)
+            : scored;
+
+        const candidateList = withinCap.length > 0 ? withinCap : scored;
+        const sorted = [...candidateList].sort((a, b) => {
+            const priceA = a.product.price ?? Number.MAX_SAFE_INTEGER;
+            const priceB = b.product.price ?? Number.MAX_SAFE_INTEGER;
+            if (priceA !== priceB) {
+                return priceA - priceB;
+            }
+            return b.score - a.score;
+        });
+
+        const chosen = sorted[0]?.product;
+        if (!chosen) return null;
+
+        if (priceCap && (chosen.price || 0) > priceCap && stepLabel) {
+            this.addUserNote(`We selected a ${stepLabel} that slightly exceeds the cost target to keep performance high.`);
+        }
+
+        return chosen;
     }
 
     private static enforceExfoliationSafety(products: Product[]): Product[] {

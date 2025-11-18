@@ -11,9 +11,7 @@ import * as path from 'path';
 
 
 class RecommendationService {
-    // Toggle AI usage (products are selected locally; AI only for tips if enabled)
     private static readonly USE_AI: boolean = false;
-    // Enhanced Retry Configuration 
     private static readonly RETRY_CONFIG: RetryConfig = {
         maxRetries: 5,
         baseDelay: 2000,
@@ -418,7 +416,8 @@ class RecommendationService {
 
                 const relevantTips = getRelevantTips(userSkin, isSensitive, filteredCandidates);
 
-                const tips = [...relevantTips, ...userNotes];
+                // Deduplicate all notes before sending
+                const tips = ValidationService.deduplicateNotes([...relevantTips, ...userNotes]);
 
                 return {
                     success: true,

@@ -12,7 +12,9 @@ import { ConcernScorer } from "./ConcernScorer";
 export class TreatmentScorer {
 
     static selectConcernTreatments(aiQuiz: AICompatibleQuizModel, pool: Product[], currentSelection: Product[]): Product[] {
-        const ranked = pool
+        // Filter out treatments with relevance score < 2
+        const filteredPool = pool.filter(t => this.scoreForTreatmentOnly(t, aiQuiz) >= 2);
+        const ranked = filteredPool
             .map(t => ({ t, s: this.scoreForTreatmentOnly(t, aiQuiz) }))
             .sort((a, b) => {
                 if (b.s !== a.s) return b.s - a.s;

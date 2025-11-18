@@ -1,3 +1,7 @@
+/**
+ * Deduplicate notes (case-insensitive, trimmed)
+ * Removes exact and whitespace/formatting duplicates
+ */
 import { AICompatibleQuizModel, QuizModel } from "../models/quiz.model";
 
 class ValidationService {
@@ -34,6 +38,18 @@ class ValidationService {
             .trim();
 
         return { list: parts, normalized };
+    }
+    static deduplicateNotes(notes: string[]): string[] {
+        const seen = new Set<string>();
+        const result: string[] = [];
+        for (const note of notes) {
+            const normalized = note.trim().toLowerCase();
+            if (!seen.has(normalized)) {
+                seen.add(normalized);
+                result.push(note.trim());
+            }
+        }
+        return result;
     }
     static async validateBody(data: any, requiredFields: string[]): Promise<boolean> {
         try {
@@ -105,7 +121,12 @@ class ValidationService {
                 // Primary concerns (scores 8-10)
                 "acne": "acne",
                 "texture": "texture",
-                "pores": "pores",
+                "wrinkles": "wrinkles",
+                "fine lines": "fine lines",
+                "wrinkles/fine lines": "wrinkles",
+                "anti-aging": "wrinkles",
+                "aging": "wrinkles",
+                "age spots": "wrinkles",
                 "hyperpigmentation": "hyperpigmentation",
                 "dark spots": "hyperpigmentation",
                 "dark spot": "hyperpigmentation",
@@ -115,12 +136,7 @@ class ValidationService {
                 "uneven skin tone": "hyperpigmentation",
 
                 // Secondary concerns (scores 5-7)
-                "wrinkles": "wrinkles",
-                "fine lines": "fine lines",
-                "wrinkles/fine lines": "wrinkles",
-                "anti-aging": "wrinkles",
-                "aging": "wrinkles",
-                "age spots": "wrinkles",
+                "pores": "pores",
                 "redness": "redness",
                 "dark circles": "dark circles",
                 "under eye circles": "dark circles",
@@ -137,8 +153,9 @@ class ValidationService {
                 "flaky skin": "dryness"
             };
 
-            const primaryConcerns = ["acne", "texture", "pores", "hyperpigmentation"];
-            const secondaryConcerns = ["wrinkles", "fine lines", "redness", "dark circles", "shaving bumps", "dullness", "dryness"];
+            // Update: Move 'wrinkles/fine lines' to primary, 'pores' to secondary
+            const primaryConcerns = ["acne", "texture", "wrinkles", "fine lines", "hyperpigmentation"];
+            const secondaryConcerns = ["pores", "redness", "dark circles", "shaving bumps", "dullness", "dryness"];
 
             const primary: string[] = [];
             const secondary: string[] = [];

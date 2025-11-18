@@ -38,6 +38,27 @@ export class BudgetManager {
         return strategies[tier];
     }
 
+    static getEssentialCaps(budget: number): {
+        cleanser: number;
+        moisturizer: number;
+        protect: number;
+        combo: number;
+    } {
+        const tier = this.getBudgetTier(budget);
+        const percentByTier: Record<1 | 2 | 3, { cleanser: number; moisturizer: number; protect: number; combo: number; }> = {
+            1: { cleanser: 0.25, moisturizer: 0.35, protect: 0.35, combo: 0.65 },
+            2: { cleanser: 0.20, moisturizer: 0.25, protect: 0.20, combo: 0.45 },
+            3: { cleanser: 0.15, moisturizer: 0.20, protect: 0.20, combo: 0.40 }
+        };
+        const tierPercents = percentByTier[tier];
+        return {
+            cleanser: Math.max(10, Math.round(budget * tierPercents.cleanser)),
+            moisturizer: Math.max(12, Math.round(budget * tierPercents.moisturizer)),
+            protect: Math.max(12, Math.round(budget * tierPercents.protect)),
+            combo: Math.max(18, Math.round(budget * tierPercents.combo))
+        };
+    }
+
     static optimizeForBudgetTier(
         aiQuiz: AICompatibleQuizModel,
         selection: Product[],
@@ -167,6 +188,7 @@ export class BudgetManager {
 
     static enforceBudget(aiQuiz: AICompatibleQuizModel, current: Product[], candidatePool: Product[]): Product[] {
         const { ceil, floor } = this.getBudgetBounds(aiQuiz);
+        const minSpend = ceil * 0.75;
         const uniqueById = (arr: Product[]) => {
             const seen = new Set<string>();
             const out: Product[] = [];
@@ -190,6 +212,37 @@ export class BudgetManager {
 
         // Apply tier-specific budget optimization
         selection = this.optimizeForBudgetTier(aiQuiz, selection, candidatePool, tierStrategy, ceil);
+        total = ProductUtils.totalCost(selection);
+
+        // Enforce bottom cap (min spend)
+        if (total < minSpend) {
+            // Try to add more relevant products (treatments first, then essentials)
+            const inSel = new Set(selection.map(p => p.productId));
+            const buckets = ProductCategorizer.bucketByCategory(candidatePool);
+            const addableTreats = buckets.treats.filter(t => !inSel.has(t.productId));
+            for (const treat of addableTreats) {
+                if (ProductUtils.totalCost(selection) >= minSpend) break;
+                // Only add if safe and relevant
+                if (!ValidationUtils.respectsExfoliationWith(selection, treat)) continue;
+                if (!ProductUtils.productHasSkinType(treat, aiQuiz.skinAssessment.skinType)) continue;
+                selection.push(treat);
+            }
+            // If still below minSpend, try adding more essentials
+            const addableEssentials: Product[] = [
+                ...buckets.cleansers,
+                ...buckets.moisturizers,
+                ...buckets.protects
+            ].filter((e: Product) => !inSel.has(e.productId));
+            for (const ess of addableEssentials) {
+                if (ProductUtils.totalCost(selection) >= minSpend) break;
+                selection.push(ess);
+            }
+            total = ProductUtils.totalCost(selection);
+            // If still below minSpend, add user note
+            if (total < minSpend) {
+                EssentialSelector.addUserNote(`Note: We optimized your routine for quality and safety. Not enough relevant products were available to reach your budget target. Your routine cost is below 75% of your budget, but all products are matched for your needs.`);
+            }
+        }
 
         let { essentials, treats } = RoutineBuilder.splitEssentialsAndTreats(selection);
 

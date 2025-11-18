@@ -6,14 +6,10 @@ import TestDataService from "./TestData.service";
 
 class AppStarterService {
     static async onStartApp() {
-        console.log('🚀 Starting Boy-Skin Recommendation System...');
+        console.log('Starting Boy-Skin Recommendation System...');
 
-        // Connect to database
         DatabaseConfig.connectToDatabase();
-
-        // Start cache update cron
         await DbService.startCacheUpdateCron();
-
         // Run client test cases validation
         // console.log('🧪 Running client test cases validation...');
         // try {
