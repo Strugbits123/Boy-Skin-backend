@@ -69,7 +69,7 @@ export class ValidationUtils {
             if (step.includes("protect") || step.includes("spf")) continue;
 
             if (step.includes("cleanse")) {
-                if (skinType === "oily" && !inRange(s, 2, 4)) return false;
+                if (skinType === "oily" && !inRange(s, 1, 4)) return false;
                 if (skinType === "dry" && !inRange(s, 1, 2)) return false;
                 if (skinType === "combination" && !inRange(s, 1, 2)) return false;
             } else if (step.includes("moistur")) {

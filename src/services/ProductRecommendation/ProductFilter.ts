@@ -143,9 +143,43 @@ export class ProductFilter {
             essentials.push(bestCleanser);
         }
 
-        // Budget-based logic for moisturizer + SPF selection
-        if (budgetTier === 1) {
-            // Low budget: Prefer combo moisturizer-SPF
+        // 🎯 CLIENT REQUIREMENT: Budget ≥$80 → ALWAYS prioritize separate SPF/Moisturizer
+        // Separate products are better for skincare efficacy
+        const shouldPrioritizeSeparate = ceil >= 80;
+
+        if (shouldPrioritizeSeparate) {
+            // High budget: ALWAYS prefer separate moisturizer + SPF
+            // Step 2: Select separate moisturizer
+            const bestMoisturizer = this.selectMoisturizer(buckets.moisturizers, aiQuiz, essentialCaps.moisturizer);
+            if (bestMoisturizer) {
+                essentials.push(bestMoisturizer);
+            }
+
+            // Step 3: Select separate SPF
+            const bestSPF = this.selectSPF(buckets.protects, aiQuiz, essentialCaps.protect);
+            if (bestSPF) {
+                essentials.push(bestSPF);
+            }
+
+            // Fallback: Only if separate products not available, try combo
+            if (!bestMoisturizer || !bestSPF) {
+                const comboProducts = safeProducts.filter(p => {
+                    const steps = ProductUtils.productSteps(p);
+                    return steps.includes("moisturize") && steps.includes("protect") && SPFUtils.passesSpfQuality(p);
+                });
+                const bestCombo = this.selectMoisturizer(comboProducts, aiQuiz, essentialCaps.combo);
+                if (bestCombo && essentials.length < 3) {
+                    // Remove any partial moisturizer/SPF and add combo
+                    const filtered = essentials.filter(p => {
+                        const steps = ProductUtils.productSteps(p);
+                        return !steps.includes("moisturize") && !steps.includes("protect");
+                    });
+                    filtered.push(bestCombo);
+                    return filtered;
+                }
+            }
+        } else {
+            // Low budget (<$80): Prefer combo moisturizer-SPF for cost efficiency
             const comboProducts = safeProducts.filter(p => {
                 const steps = ProductUtils.productSteps(p);
                 return steps.includes("moisturize") && steps.includes("protect") && SPFUtils.passesSpfQuality(p);
@@ -155,31 +189,16 @@ export class ProductFilter {
                 essentials.push(bestCombo);
                 return essentials; // Combo found, no need for separate SPF
             }
-        }
 
-        // High budget: Prefer separate moisturizer + SPF
-        // Step 2: Select separate moisturizer
-        const bestMoisturizer = this.selectMoisturizer(buckets.moisturizers, aiQuiz, essentialCaps.moisturizer);
-        if (bestMoisturizer) {
-            essentials.push(bestMoisturizer);
-        }
-
-        // Step 3: Select separate SPF
-        const bestSPF = this.selectSPF(buckets.protects, aiQuiz, essentialCaps.protect);
-        if (bestSPF) {
-            essentials.push(bestSPF);
-        }
-
-        // If mid/low budget and combo not found, fallback to separate
-        if (budgetTier === 1 && essentials.length < 3) {
-            // Try to add missing essentials if combo not found
-            if (!bestMoisturizer && buckets.moisturizers.length > 0) {
-                const fallbackMoist = this.selectMoisturizer(buckets.moisturizers, aiQuiz, essentialCaps.moisturizer);
-                if (fallbackMoist) essentials.push(fallbackMoist);
+            // Fallback: If combo not found, use separate
+            const bestMoisturizer = this.selectMoisturizer(buckets.moisturizers, aiQuiz, essentialCaps.moisturizer);
+            if (bestMoisturizer) {
+                essentials.push(bestMoisturizer);
             }
-            if (!bestSPF && buckets.protects.length > 0) {
-                const fallbackSPF = this.selectSPF(buckets.protects, aiQuiz, essentialCaps.protect);
-                if (fallbackSPF) essentials.push(fallbackSPF);
+
+            const bestSPF = this.selectSPF(buckets.protects, aiQuiz, essentialCaps.protect);
+            if (bestSPF) {
+                essentials.push(bestSPF);
             }
         }
 
@@ -681,6 +700,11 @@ export class ProductFilter {
             const hasStrengthRating = (p.strengthRatingOfActives || []).length > 0;
             if (!hasStrengthRating) return false;
 
+            // 🎯 CLIENT REQUIREMENT: Minimum relevance threshold check
+            // Products must have ≥2.0 points from active ingredient relevance
+            const relevanceScore = ConcernScorer.calculateConcernRelevanceScore(p, aiQuiz);
+            if (relevanceScore < 2.0) return false;
+
             // STRICT: Check skinConcern matches - must match at least 2 concerns OR be best product
             const concernMatches = countConcernMatches(p);
             const isBestProduct = DbService.isBestProductForUser(p, aiQuiz);
@@ -742,6 +766,10 @@ export class ProductFilter {
             const hasFunction = (p.function || []).length > 0;
             if (!hasFunction) return false;
 
+            // 🎯 CLIENT REQUIREMENT: Minimum relevance threshold check
+            const relevanceScore = ConcernScorer.calculateConcernRelevanceScore(p, aiQuiz);
+            if (relevanceScore < 2.0) return false;
+
             // Check skinConcern matches user concerns (at least 1 match)
             const concernMatches = countConcernMatches(p);
             if (concernMatches < 1) return false;
@@ -797,6 +825,10 @@ export class ProductFilter {
             // Check function exists
             const hasFunction = (p.function || []).length > 0;
             if (!hasFunction) return false;
+
+            // 🎯 CLIENT REQUIREMENT: Minimum relevance threshold check
+            const relevanceScore = ConcernScorer.calculateConcernRelevanceScore(p, aiQuiz);
+            if (relevanceScore < 2.0) return false;
 
             // Check skinConcern matches user concerns (at least 1 match)
             const concernMatches = countConcernMatches(p);
@@ -982,6 +1014,14 @@ export class ProductFilter {
             // Check: treatments should not exceed 20% of budget AND total should not exceed full budget
             const newTreatmentsCost = treatmentsCost + treatmentPrice;
             const newTotalCost = essentialsCost + newTreatmentsCost;
+
+            // ✅ CLIENT CONCERN #2: RELEVANCE CHECK - Skip products with score < 2.0
+            const relevanceScore = ConcernScorer.calculateConcernRelevanceScore(nextTreatment, aiQuiz);
+            if (relevanceScore < 2.0) {
+                const index = availableTreatments.findIndex(t => t.productId === nextTreatment.productId);
+                if (index > -1) availableTreatments.splice(index, 1);
+                continue; // Skip this irrelevant treatment
+            }
 
             // If it's a best product OR matches 2+ concerns but exceeds 20% cap, still add it with a note
             const isHighQualityMatch = isBestProduct || concernMatches >= 2;

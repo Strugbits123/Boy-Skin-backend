@@ -12,8 +12,8 @@ import { ConcernScorer } from "./ConcernScorer";
 export class TreatmentScorer {
 
     static selectConcernTreatments(aiQuiz: AICompatibleQuizModel, pool: Product[], currentSelection: Product[]): Product[] {
-        // Filter out treatments with relevance score < 2
-        const filteredPool = pool.filter(t => this.scoreForTreatmentOnly(t, aiQuiz) >= 2);
+        // Filter out treatments with relevance score < 2.0 (CLIENT CONCERN #2)
+        const filteredPool = pool.filter(t => ConcernScorer.calculateConcernRelevanceScore(t, aiQuiz) >= 2.0);
         const ranked = filteredPool
             .map(t => ({ t, s: this.scoreForTreatmentOnly(t, aiQuiz) }))
             .sort((a, b) => {
@@ -44,6 +44,7 @@ export class TreatmentScorer {
             hyperpigmentation: ["vitamin c", "ascorbic", "kojic", "azelaic", "niacinamide"],
             pores: ["niacinamide", "retinal"],
             wrinkles: ["retinal", "retinol", "glycolic", "niacinamide"],
+            "fine lines": ["retinal", "retinol", "glycolic", "niacinamide", "peptides"],
             redness: ["niacinamide", "zinc oxide", "azelaic", "centella"],
             "dark circles": ["retinal", "retinol", "vitamin c", "niacinamide", "caffeine"],
             dullness: ["vitamin c", "niacinamide"],
@@ -54,11 +55,11 @@ export class TreatmentScorer {
 
         let score = 0;
         const allConcerns = [...primary, ...secondary];
-        const dedup = Array.from(new Set(allConcerns));
+        const dedup = Array.from(new Set(allConcerns.map(c => c.toLowerCase())));
         for (const c of dedup) {
             const acts = concernToActives[c] || [];
             const s1 = scoreList(txtPrimary, acts) * 1.0;
-            const boost = primary.includes(c) ? 1 : 0;
+            const boost = primary.map(p => p.toLowerCase()).includes(c) ? 1 : 0;
             score += s1 + boost;
         }
         if (aiQuiz.skinAssessment.skinSensitivity === "sensitive" && ProductUtils.isSensitiveSafe(p)) score += 0.5;

@@ -360,7 +360,7 @@ class RecommendationService {
 
             const allConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary];
             const primaryConcern = allConcerns[0] || 'general';
-
+            console.log(`Going to prefilter products`)
             const filteredCandidates = await ProductFilter.prefilterProducts(aiQuiz, allProducts);
 
             console.log('\n==================');

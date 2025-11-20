@@ -7,6 +7,7 @@ import Product from "../../../models/product.model";
 import { AICompatibleQuizModel } from "../../../models/quiz.model";
 import { ProductUtils } from "../utils/ProductUtils";
 import { ValidationUtils } from "../utils/ValidationUtils";
+import { SPFUtils } from "../utils/SPFUtils";
 import { ConcernScorer } from "../scoring/ConcernScorer";
 import { ConflictDetector } from "../compatibility/ConflictDetector";
 import { ProductCategorizer } from "../selection/ProductCategorizer";
@@ -116,6 +117,10 @@ export class BudgetManager {
             const alreadySelected = selection.some(s => s.productId === t.productId);
             if (alreadySelected) return false;
 
+            // 🎯 CLIENT CONCERN #2: Relevance threshold check
+            const relevanceScore = ConcernScorer.calculateConcernRelevanceScore(t, aiQuiz);
+            if (relevanceScore < 2.0) return false;
+
             // Price filtering for premium focus
             const price = t.price || 0;
             if (price > budgetPerTreatment) return false;
@@ -188,7 +193,7 @@ export class BudgetManager {
 
     static enforceBudget(aiQuiz: AICompatibleQuizModel, current: Product[], candidatePool: Product[]): Product[] {
         const { ceil, floor } = this.getBudgetBounds(aiQuiz);
-        const minSpend = ceil * 0.75;
+        const minSpend = ceil * 0.75; // 🎯 CLIENT REQUIREMENT: 75% minimum (25% bottom cap)
         const uniqueById = (arr: Product[]) => {
             const seen = new Set<string>();
             const out: Product[] = [];
@@ -214,33 +219,139 @@ export class BudgetManager {
         selection = this.optimizeForBudgetTier(aiQuiz, selection, candidatePool, tierStrategy, ceil);
         total = ProductUtils.totalCost(selection);
 
-        // Enforce bottom cap (min spend)
+        // 🎯 CLIENT REQUIREMENT: Aggressive 75% minimum enforcement
+        // Multi-pass approach: Treatments → Upgrade Essentials → Secondary Products
         if (total < minSpend) {
-            // Try to add more relevant products (treatments first, then essentials)
             const inSel = new Set(selection.map(p => p.productId));
             const buckets = ProductCategorizer.bucketByCategory(candidatePool);
-            const addableTreats = buckets.treats.filter(t => !inSel.has(t.productId));
-            for (const treat of addableTreats) {
+            const skinType = aiQuiz.skinAssessment.skinType;
+            const isSensitive = aiQuiz.skinAssessment.skinSensitivity === "sensitive";
+
+            // PASS 1: Add high-scoring treatment products
+            const scoredTreatments = buckets.treats
+                .filter(t => !inSel.has(t.productId))
+                .filter(t => ConcernScorer.calculateConcernRelevanceScore(t, aiQuiz) >= 2.0)
+                .filter(t => ValidationUtils.respectsExfoliationWith(selection, t))
+                .filter(t => ProductUtils.productHasSkinType(t, skinType))
+                .filter(t => !isSensitive || ProductUtils.isSensitiveSafe(t))
+                .map(t => ({
+                    product: t,
+                    score: ConcernScorer.scoreForConcerns(t, aiQuiz),
+                    price: t.price || 0
+                }))
+                .sort((a, b) => b.score - a.score);
+
+            for (const item of scoredTreatments) {
                 if (ProductUtils.totalCost(selection) >= minSpend) break;
-                // Only add if safe and relevant
-                if (!ValidationUtils.respectsExfoliationWith(selection, treat)) continue;
-                if (!ProductUtils.productHasSkinType(treat, aiQuiz.skinAssessment.skinType)) continue;
-                selection.push(treat);
+                if (ProductUtils.totalCost(selection) + item.price > ceil) continue;
+
+                // Check conflicts before adding
+                const hasConflict = selection.some(existing =>
+                    ConflictDetector.conflicts(item.product, existing)
+                );
+                if (!hasConflict) {
+                    selection.push(item.product);
+                    inSel.add(item.product.productId);
+                }
             }
-            // If still below minSpend, try adding more essentials
-            const addableEssentials: Product[] = [
-                ...buckets.cleansers,
-                ...buckets.moisturizers,
-                ...buckets.protects
-            ].filter((e: Product) => !inSel.has(e.productId));
-            for (const ess of addableEssentials) {
-                if (ProductUtils.totalCost(selection) >= minSpend) break;
-                selection.push(ess);
+
+            // PASS 2: If still below minSpend, try upgrading essentials to premium versions
+            if (ProductUtils.totalCost(selection) < minSpend) {
+                const essentials = selection.filter(p => {
+                    const steps = ProductUtils.productSteps(p);
+                    return steps.includes("cleanse") || steps.includes("moisturize") || steps.includes("protect");
+                });
+
+                for (const essential of essentials) {
+                    if (ProductUtils.totalCost(selection) >= minSpend) break;
+
+                    const steps = ProductUtils.productSteps(essential);
+                    let upgradeCandidates: Product[] = [];
+
+                    if (steps.includes("cleanse")) {
+                        upgradeCandidates = buckets.cleansers.filter(c =>
+                            !inSel.has(c.productId) &&
+                            (c.price || 0) > (essential.price || 0) &&
+                            ProductUtils.productHasSkinType(c, skinType)
+                        );
+                    } else if (steps.includes("moisturize")) {
+                        upgradeCandidates = buckets.moisturizers.filter(m =>
+                            !inSel.has(m.productId) &&
+                            (m.price || 0) > (essential.price || 0) &&
+                            ProductUtils.productHasSkinType(m, skinType)
+                        );
+                    } else if (steps.includes("protect")) {
+                        upgradeCandidates = buckets.protects.filter(s =>
+                            !inSel.has(s.productId) &&
+                            (s.price || 0) > (essential.price || 0) &&
+                            ProductUtils.productHasSkinType(s, skinType) &&
+                            SPFUtils.passesSpfQuality(s)
+                        );
+                    }
+
+                    if (upgradeCandidates.length > 0) {
+                        const bestUpgrade = upgradeCandidates
+                            .map(u => ({
+                                product: u,
+                                score: ConcernScorer.scoreForConcerns(u, aiQuiz)
+                            }))
+                            .sort((a, b) => b.score - a.score)[0];
+
+                        if (bestUpgrade) {
+                            const newTotal = ProductUtils.totalCost(selection) - (essential.price || 0) + (bestUpgrade.product.price || 0);
+                            if (newTotal <= ceil) {
+                                // Replace with premium version
+                                selection = selection.filter(p => p.productId !== essential.productId);
+                                selection.push(bestUpgrade.product);
+                                inSel.delete(essential.productId);
+                                inSel.add(bestUpgrade.product.productId);
+                            }
+                        }
+                    }
+                }
             }
+
+            // PASS 3: Add secondary concern products if still below
+            if (ProductUtils.totalCost(selection) < minSpend) {
+                const secondaryConcernProducts = candidatePool
+                    .filter(p => !inSel.has(p.productId))
+                    .filter(p => ConcernScorer.calculateConcernRelevanceScore(p, aiQuiz) >= 2.0)
+                    .filter(p => !ValidationUtils.violatesSafety(p, aiQuiz))
+                    .filter(p => ProductUtils.productHasSkinType(p, skinType))
+                    .filter(p => !isSensitive || ProductUtils.isSensitiveSafe(p))
+                    .filter(p => {
+                        const productConcerns = (p.skinConcern || []).map(sc => (sc.name || "").toLowerCase());
+                        return aiQuiz.concerns.secondary.some(sc =>
+                            productConcerns.some(pc => pc.includes(sc.toLowerCase()))
+                        );
+                    })
+                    .map(p => ({
+                        product: p,
+                        score: ConcernScorer.scoreForConcerns(p, aiQuiz),
+                        price: p.price || 0
+                    }))
+                    .sort((a, b) => b.score - a.score);
+
+                for (const item of secondaryConcernProducts) {
+                    if (ProductUtils.totalCost(selection) >= minSpend) break;
+                    if (ProductUtils.totalCost(selection) + item.price > ceil) continue;
+
+                    const hasConflict = selection.some(existing =>
+                        ConflictDetector.conflicts(item.product, existing)
+                    );
+                    if (!hasConflict && ValidationUtils.respectsExfoliationWith(selection, item.product)) {
+                        selection.push(item.product);
+                        inSel.add(item.product.productId);
+                    }
+                }
+            }
+
             total = ProductUtils.totalCost(selection);
-            // If still below minSpend, add user note
+
+            // Final check: If still below 75%, add informative note
             if (total < minSpend) {
-                EssentialSelector.addUserNote(`Note: We optimized your routine for quality and safety. Not enough relevant products were available to reach your budget target. Your routine cost is below 75% of your budget, but all products are matched for your needs.`);
+                const utilizationPercent = ((total / ceil) * 100).toFixed(1);
+                EssentialSelector.addUserNote(`Note: We've optimized your routine with the best available products for your skin type and concerns. While the total ($${total.toFixed(2)}) is ${utilizationPercent}% of your $${ceil} budget, we prioritized quality, safety, and compatibility over maximizing spend. All products are carefully selected to work together effectively.`);
             }
         }
 
@@ -394,7 +505,8 @@ export class BudgetManager {
 
             const inSel = new Set(selection.map(p => p.productId));
             const candidatesTreats = ProductCategorizer.bucketByCategory(candidatePool).treats
-                .filter(t => !inSel.has(t.productId));
+                .filter(t => !inSel.has(t.productId))
+                .filter(t => ConcernScorer.calculateConcernRelevanceScore(t, aiQuiz) >= 2.0);
 
             const userConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary];
             const concernPriority: Record<string, number> = {

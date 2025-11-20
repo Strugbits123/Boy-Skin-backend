@@ -273,11 +273,20 @@ class ValidationService {
         const checkAcneStatus = (workOn: string, workOnAcne: string): "active acne" | "not active acne" => {
             // First check work_on_acne field for specific values
             if (workOnAcne) {
-                const normalizedAcne = workOnAcne.toLowerCase().trim();
-                if (normalizedAcne === "active acne" || normalizedAcne === "acne-prone") {
+                const normalizedAcne = workOnAcne.toLowerCase().trim().replace(/\s+/g, ' ');
+
+                // Flexible matching for "active acne" (handles "Active Acne", "active acne", etc.)
+                if (normalizedAcne.includes("active") && normalizedAcne.includes("acne")) {
                     return "active acne";
                 }
-                if (normalizedAcne === "n/a") {
+
+                // Flexible matching for "acne-prone" or "acne prone" (handles both formats)
+                if (normalizedAcne.includes("prone") || normalizedAcne.includes("acne-prone")) {
+                    return "not active acne"; // Acne-prone = prevention, not active
+                }
+
+                // Explicit N/A check
+                if (normalizedAcne === "n/a" || normalizedAcne === "na") {
                     return "not active acne";
                 }
             }
@@ -350,6 +359,29 @@ class ValidationService {
         // Execute transformations with proper null checks
         const concerns = parseConcerns(quiz.work_on || "");
         const safetyInfo = parseSafetyInfo(quiz.additional_info || "");
+        const acneStatus = checkAcneStatus(quiz.work_on || "", quiz.work_on_acne || "");
+
+        // 🎯 AUTO-ADD "acne" to concerns if work_on_acne field indicates acne concern
+        if (quiz.work_on_acne) {
+            const normalizedAcne = quiz.work_on_acne.toLowerCase().trim();
+            const hasAcneConcern = normalizedAcne !== "n/a" && normalizedAcne !== "na" && normalizedAcne !== "";
+
+            // If user has acne status but "acne" not in concerns, add it
+            if (hasAcneConcern) {
+                const acneInPrimary = concerns.primary.some(c => c.toLowerCase() === "acne");
+                const acneInSecondary = concerns.secondary.some(c => c.toLowerCase() === "acne");
+
+                if (!acneInPrimary && !acneInSecondary) {
+                    // Active Acne = PRIMARY concern (needs aggressive treatment)
+                    // Acne-Prone = SECONDARY concern (prevention)
+                    if (acneStatus === "active acne") {
+                        concerns.primary.unshift("acne"); // High priority for active acne
+                    } else {
+                        concerns.secondary.unshift("acne"); // Lower priority for acne-prone
+                    }
+                }
+            }
+        }
 
         return {
             demographics: {
@@ -359,7 +391,7 @@ class ValidationService {
             skinAssessment: {
                 skinType: mapSkinType(quiz.wakeUpSkinType || "normal"),
                 skinSensitivity: mapSensitivity(quiz.skinSensitivity || "not sensitive"),
-                currentAcneStatus: checkAcneStatus(quiz.work_on || "", quiz.work_on_acne || "")
+                currentAcneStatus: acneStatus
             },
             concerns: {
                 primary: concerns.primary,
