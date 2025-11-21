@@ -692,6 +692,9 @@ export class ProductFilter {
             const hasFunction = (p.function || []).length > 0;
             if (!hasFunction) return false;
 
+            // AI-DOC Rule R5: Treatment Functions Matching - Check if functions match user concerns
+            if (!ProductUtils.functionMatchesUserConcerns(p, aiQuiz)) return false;
+
             // Check format exists
             const hasFormat = p.format && p.format.name;
             if (!hasFormat) return false;
@@ -705,12 +708,22 @@ export class ProductFilter {
             const relevanceScore = ConcernScorer.calculateConcernRelevanceScore(p, aiQuiz);
             if (relevanceScore < 2.0) return false;
 
-            // STRICT: Check skinConcern matches - must match at least 2 concerns OR be best product
+            // AI-DOC Rule I1: Prioritize ingredients that address multiple concerns (not hard requirement)
+            // Check if product is high-priority for primary concern (e.g., BP/Sulfur for Active Acne)
             const concernMatches = countConcernMatches(p);
             const isBestProduct = DbService.isBestProductForUser(p, aiQuiz);
 
-            // Require at least 2 concern matches OR be a best product
-            if (concernMatches < 2 && !isBestProduct) return false;
+            // Dynamic check: Allow products with high-priority ingredients for primary concerns
+            const isActiveAcneUser = aiQuiz.skinAssessment.currentAcneStatus === "active acne";
+            const hasAcnePrimary = aiQuiz.concerns.primary.some(c => c.toLowerCase() === "acne");
+            const txtPrimary = (ProductUtils.getPrimaryActivesText(p) || "").toLowerCase();
+            const txtAll = (p.ingredientList?.plain_text || "").toLowerCase();
+            const hasBP = /\bbenzoyl\b/i.test(txtPrimary + " " + txtAll);
+            const hasSulfur = /\bsulfur\b/i.test(txtPrimary + " " + txtAll);
+            const isHighPriorityAcneProduct = isActiveAcneUser && hasAcnePrimary && (hasBP || hasSulfur);
+
+            // Prioritize multi-concern products, but allow high-priority single-concern products
+            if (concernMatches < 2 && !isBestProduct && !isHighPriorityAcneProduct) return false;
 
             return true;
         });
@@ -728,6 +741,17 @@ export class ProductFilter {
                     if (concernMatches >= 2) bonus += 10; // Multiple concerns matched
                     if (concernMatches >= primaryConcernsCount) bonus += 20; // All primary concerns matched
                     if (isBestProduct) bonus += 15; // Best product bonus
+
+                    // 🎯 ACTIVE ACNE PRIORITY: Extra boost for BP/Sulfur products
+                    const isActiveAcneUser = aiQuiz.skinAssessment.currentAcneStatus === "active acne";
+                    const hasAcnePrimary = aiQuiz.concerns.primary.some(c => c.toLowerCase() === "acne");
+                    if (isActiveAcneUser && hasAcnePrimary) {
+                        const pTxtPrimary = (ProductUtils.getPrimaryActivesText(p) || "").toLowerCase();
+                        const pTxtAll = (p.ingredientList?.plain_text || "").toLowerCase();
+                        const pProductText = pTxtPrimary + " " + pTxtAll;
+                        if (/\bbenzoyl\b/i.test(pProductText)) bonus += 25; // Strong boost for BP
+                        if (/\bsulfur\b/i.test(pProductText)) bonus += 20; // Boost for Sulfur
+                    }
 
                     return {
                         product: p,
@@ -765,6 +789,9 @@ export class ProductFilter {
             // Check function exists
             const hasFunction = (p.function || []).length > 0;
             if (!hasFunction) return false;
+
+            // AI-DOC Rule R5: Treatment Functions Matching - Check if functions match user concerns
+            if (!ProductUtils.functionMatchesUserConcerns(p, aiQuiz)) return false;
 
             // 🎯 CLIENT REQUIREMENT: Minimum relevance threshold check
             const relevanceScore = ConcernScorer.calculateConcernRelevanceScore(p, aiQuiz);
@@ -825,6 +852,9 @@ export class ProductFilter {
             // Check function exists
             const hasFunction = (p.function || []).length > 0;
             if (!hasFunction) return false;
+
+            // AI-DOC Rule R5: Treatment Functions Matching - Check if functions match user concerns
+            if (!ProductUtils.functionMatchesUserConcerns(p, aiQuiz)) return false;
 
             // 🎯 CLIENT REQUIREMENT: Minimum relevance threshold check
             const relevanceScore = ConcernScorer.calculateConcernRelevanceScore(p, aiQuiz);

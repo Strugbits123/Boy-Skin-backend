@@ -35,7 +35,10 @@ export class ConcernScorer {
             },
             hyperpigmentation: {
                 "vitamin c": 10, "ascorbic": 10, "kojic": 9, "azelaic": 9,
-                "niacinamide": 8, "glycolic": 7, "aha": 7, "retinal": 6, "retinol": 5, "lactic": 4
+                "niacinamide": 8, "tranexamic": 8, "tranexamic acid": 8,
+                "glycolic": 7, "aha": 7, "retinal": 6, "retinol": 5,
+                "dimethoxytolyl propylresorcinol": 6, "dimethoxytolyl": 6,
+                "astaxanthin": 6, "lactic": 4
             },
             pores: {
                 "salicylic": 9, "bha": 9, "niacinamide": 8, "retinal": 7, "retinol": 6
@@ -49,28 +52,64 @@ export class ConcernScorer {
                 "niacinamide": 6, "vitamin c": 5, "lactic": 5, "peptides": 5
             },
             redness: {
-                "azelaic": 9, "niacinamide": 8, "allantoin": 6, "centella": 5, "zinc oxide": 4
+                "azelaic": 9, "niacinamide": 8, "allantoin": 6, "bisabolol": 6,
+                "centella": 5, "chamomile": 5, "zinc oxide": 4, "witch hazel": 3
             },
             "dark circles": {
                 "retinal": 8, "retinol": 7, "vitamin c": 6, "niacinamide": 5, "caffeine": 5
             },
             dullness: {
-                "vitamin c": 8, "niacinamide": 7, "glycolic": 6, "aha": 6, "lactic": 5
+                "vitamin c": 8, "niacinamide": 7, "alpha arbutin": 7, "arbutin": 7,
+                "glycolic": 6, "aha": 6, "lactic": 5,
+                "meshima mushroom": 4, "meshima": 4
             },
             dryness: {
-                "hyaluronic": 8, "ceramides": 8, "ceramide": 8, "glycerin": 7, "squalane": 6, "urea": 6
+                "hyaluronic": 8, "ceramides": 8, "ceramide": 8, "glycerin": 7,
+                "petrolatum": 9, "dimethicone": 8,
+                "caprylic capric triglyceride": 8, "caprylic/capric triglyceride": 8, "caprylic": 8, "capric": 8,
+                "urea": 7, "squalane": 7,
+                "ginseng": 5, "panax ginseng": 5,
+                "galactomyces ferment filtrate": 5, "galactomyces": 5
             }
         };
 
-        const weightPrimary = 0.9;
-        const weightAll = 0.1;
+        // AI-DOC Rule I3: 80% weight to Primary Active Ingredients, 20% weight to total Ingredient List
+        const weightPrimary = 0.8;
+        const weightAll = 0.2;
 
         // AI.DOC compliant scoring with ingredient effectiveness weights
         const scoreIngredients = (source: string, ingredientScores: Record<string, number>): number => {
             let totalScore = 0;
             for (const [ingredient, effectivenessScore] of Object.entries(ingredientScores)) {
-                if (source.includes(ingredient)) {
-                    totalScore += effectivenessScore;
+                // Dynamic ingredient matching: Handle multi-word ingredients (e.g., "benzoyl peroxide")
+                // Match both full phrase and key component (e.g., "benzoyl peroxide" OR "benzoyl")
+                if (ingredient.includes(" ")) {
+                    // Multi-word ingredient: Match full phrase OR key component with word boundary
+                    const words = ingredient.split(" ");
+                    const keyComponent = words[0]; // First word (e.g., "benzoyl" from "benzoyl peroxide")
+                    const fullPhrase = ingredient;
+
+                    if (keyComponent) {
+                        // Use word boundary regex for accurate matching
+                        const fullRegex = new RegExp(`\\b${fullPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                        const keyRegex = new RegExp(`\\b${keyComponent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+
+                        if (fullRegex.test(source) || keyRegex.test(source)) {
+                            totalScore += effectivenessScore;
+                        }
+                    } else {
+                        // Fallback: Match full phrase only
+                        const fullRegex = new RegExp(`\\b${fullPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                        if (fullRegex.test(source)) {
+                            totalScore += effectivenessScore;
+                        }
+                    }
+                } else {
+                    // Single-word ingredient: Use word boundary for exact match
+                    const regex = new RegExp(`\\b${ingredient.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                    if (regex.test(source)) {
+                        totalScore += effectivenessScore;
+                    }
                 }
             }
             return totalScore;
@@ -144,6 +183,20 @@ export class ConcernScorer {
             }
         }
 
+        // 🎯 ACTIVE ACNE PRIORITY BOOST: BP/Sulfur products get extra boost for Active Acne users
+        // AI-DOC: Benzoyl Peroxide (Score 10) and Sulfur (Score 7) are PRIMARY/SECONDARY actives for Active Acne
+        if (isActiveAcneUser && userHasAcneConcern) {
+            const hasBP = /\bbenzoyl\b/i.test(productText);
+            const hasSulfur = /\bsulfur\b/i.test(productText);
+
+            if (hasBP) {
+                score += 15; // Strong boost for BP (primary active for Active Acne)
+            }
+            if (hasSulfur) {
+                score += 10; // Boost for Sulfur (secondary active for Active Acne)
+            }
+        }
+
         // Premium brand/quality boost for clinically proven products
         const productName = (p.productName || "").toLowerCase();
         const premiumKeywords = [
@@ -194,7 +247,10 @@ export class ConcernScorer {
             },
             hyperpigmentation: {
                 "vitamin c": 10, "ascorbic": 10, "kojic": 9, "azelaic": 9,
-                "niacinamide": 8, "glycolic": 7, "aha": 7, "retinal": 6, "retinol": 5, "lactic": 4
+                "niacinamide": 8, "tranexamic": 8, "tranexamic acid": 8,
+                "glycolic": 7, "aha": 7, "retinal": 6, "retinol": 5,
+                "dimethoxytolyl propylresorcinol": 6, "dimethoxytolyl": 6,
+                "astaxanthin": 6, "lactic": 4
             },
             pores: {
                 "salicylic": 9, "bha": 9, "niacinamide": 8, "retinal": 7, "retinol": 6
@@ -208,25 +264,61 @@ export class ConcernScorer {
                 "niacinamide": 6, "vitamin c": 5, "lactic": 5, "peptides": 5
             },
             redness: {
-                "azelaic": 9, "niacinamide": 8, "allantoin": 6, "centella": 5, "zinc oxide": 4
+                "azelaic": 9, "niacinamide": 8, "allantoin": 6, "bisabolol": 6,
+                "centella": 5, "chamomile": 5, "zinc oxide": 4, "witch hazel": 3
             },
             "dark circles": {
                 "retinal": 8, "retinol": 7, "vitamin c": 6, "niacinamide": 5, "caffeine": 5
             },
             dullness: {
-                "vitamin c": 8, "niacinamide": 7, "glycolic": 6, "aha": 6, "lactic": 5
+                "vitamin c": 8, "niacinamide": 7, "alpha arbutin": 7, "arbutin": 7,
+                "glycolic": 6, "aha": 6, "lactic": 5,
+                "meshima mushroom": 4, "meshima": 4
             },
             dryness: {
-                "hyaluronic": 8, "ceramides": 8, "ceramide": 8, "glycerin": 7, "squalane": 6, "urea": 6
+                "hyaluronic": 8, "ceramides": 8, "ceramide": 8, "glycerin": 7,
+                "petrolatum": 9, "dimethicone": 8,
+                "caprylic capric triglyceride": 8, "caprylic/capric triglyceride": 8, "caprylic": 8, "capric": 8,
+                "urea": 7, "squalane": 7,
+                "ginseng": 5, "panax ginseng": 5,
+                "galactomyces ferment filtrate": 5, "galactomyces": 5
             }
         };
 
-        // Treatment-focused scoring with AI.DOC effectiveness weights
+        // AI-DOC Rule I3: TREATMENT OVERRIDE - 100% Primary Active Ingredients for treatments
+        // Use same dynamic ingredient matching as scoreForConcerns() for consistency
         const scoreIngredients = (source: string, ingredientScores: Record<string, number>): number => {
             let totalScore = 0;
             for (const [ingredient, effectivenessScore] of Object.entries(ingredientScores)) {
-                if (source.includes(ingredient)) {
-                    totalScore += effectivenessScore;
+                // Dynamic ingredient matching: Handle multi-word ingredients (e.g., "benzoyl peroxide")
+                // Match both full phrase and key component (e.g., "benzoyl peroxide" OR "benzoyl")
+                if (ingredient.includes(" ")) {
+                    // Multi-word ingredient: Match full phrase OR key component with word boundary
+                    const words = ingredient.split(" ");
+                    const keyComponent = words[0];
+                    const fullPhrase = ingredient;
+
+                    if (keyComponent) {
+                        // Use word boundary regex for accurate matching
+                        const fullRegex = new RegExp(`\\b${fullPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                        const keyRegex = new RegExp(`\\b${keyComponent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+
+                        if (fullRegex.test(source) || keyRegex.test(source)) {
+                            totalScore += effectivenessScore;
+                        }
+                    } else {
+                        // Fallback: Match full phrase only
+                        const fullRegex = new RegExp(`\\b${fullPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                        if (fullRegex.test(source)) {
+                            totalScore += effectivenessScore;
+                        }
+                    }
+                } else {
+                    // Single-word ingredient: Use word boundary for exact match
+                    const regex = new RegExp(`\\b${ingredient.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                    if (regex.test(source)) {
+                        totalScore += effectivenessScore;
+                    }
                 }
             }
             return totalScore;
@@ -315,7 +407,10 @@ export class ConcernScorer {
             },
             hyperpigmentation: {
                 "vitamin c": 10, "ascorbic": 10, "kojic": 9, "azelaic": 9,
-                "niacinamide": 8, "glycolic": 7, "aha": 7, "retinal": 6, "retinol": 5, "lactic": 4
+                "niacinamide": 8, "tranexamic": 8, "tranexamic acid": 8,
+                "glycolic": 7, "aha": 7, "retinal": 6, "retinol": 5,
+                "dimethoxytolyl propylresorcinol": 6, "dimethoxytolyl": 6,
+                "astaxanthin": 6, "lactic": 4
             },
             pores: {
                 "salicylic": 9, "bha": 9, "niacinamide": 8, "retinal": 7, "retinol": 6
@@ -329,16 +424,24 @@ export class ConcernScorer {
                 "niacinamide": 6, "vitamin c": 5, "lactic": 5, "peptides": 5
             },
             redness: {
-                "azelaic": 9, "niacinamide": 8, "allantoin": 6, "centella": 5, "zinc oxide": 4
+                "azelaic": 9, "niacinamide": 8, "allantoin": 6, "bisabolol": 6,
+                "centella": 5, "chamomile": 5, "zinc oxide": 4, "witch hazel": 3
             },
             "dark circles": {
                 "retinal": 8, "retinol": 7, "vitamin c": 6, "niacinamide": 5, "caffeine": 5
             },
             dullness: {
-                "vitamin c": 8, "niacinamide": 7, "glycolic": 6, "aha": 6, "lactic": 5
+                "vitamin c": 8, "niacinamide": 7, "alpha arbutin": 7, "arbutin": 7,
+                "glycolic": 6, "aha": 6, "lactic": 5,
+                "meshima mushroom": 4, "meshima": 4
             },
             dryness: {
-                "hyaluronic": 8, "ceramides": 8, "ceramide": 8, "glycerin": 7, "squalane": 6, "urea": 6
+                "hyaluronic": 8, "ceramides": 8, "ceramide": 8, "glycerin": 7,
+                "petrolatum": 9, "dimethicone": 8,
+                "caprylic capric triglyceride": 8, "caprylic/capric triglyceride": 8, "caprylic": 8, "capric": 8,
+                "urea": 7, "squalane": 7,
+                "ginseng": 5, "panax ginseng": 5,
+                "galactomyces ferment filtrate": 5, "galactomyces": 5
             }
         };
 
@@ -353,6 +456,31 @@ export class ConcernScorer {
 
         let relevanceScore = 0;
 
+        // Dynamic ingredient matching helper (same as scoreIngredients)
+        const matchesIngredient = (source: string, ingredient: string): boolean => {
+            if (ingredient.includes(" ")) {
+                // Multi-word ingredient: Match full phrase OR key component with word boundary
+                const words = ingredient.split(" ");
+                const keyComponent = words[0];
+                const fullPhrase = ingredient;
+
+                if (keyComponent) {
+                    const fullRegex = new RegExp(`\\b${fullPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                    const keyRegex = new RegExp(`\\b${keyComponent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+
+                    return fullRegex.test(source) || keyRegex.test(source);
+                } else {
+                    // Fallback: Match full phrase only
+                    const fullRegex = new RegExp(`\\b${fullPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                    return fullRegex.test(source);
+                }
+            } else {
+                // Single-word ingredient: Use word boundary for exact match
+                const regex = new RegExp(`\\b${ingredient.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                return regex.test(source);
+            }
+        };
+
         // Check primary concerns - 1.0 point per match
         for (const concern of primary) {
             const mappedConcern = mapAcneConcern(concern);
@@ -360,7 +488,7 @@ export class ConcernScorer {
             let concernMatched = false;
 
             for (const ingredient of Object.keys(ingredientMatrix)) {
-                if (txtPrimary.includes(ingredient) || txtAll.includes(ingredient)) {
+                if (matchesIngredient(txtPrimary, ingredient) || matchesIngredient(txtAll, ingredient)) {
                     concernMatched = true;
                     break;
                 }
@@ -378,7 +506,7 @@ export class ConcernScorer {
             let concernMatched = false;
 
             for (const ingredient of Object.keys(ingredientMatrix)) {
-                if (txtPrimary.includes(ingredient) || txtAll.includes(ingredient)) {
+                if (matchesIngredient(txtPrimary, ingredient) || matchesIngredient(txtAll, ingredient)) {
                     concernMatched = true;
                     break;
                 }

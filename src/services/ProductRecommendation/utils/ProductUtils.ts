@@ -4,6 +4,7 @@
  */
 
 import Product from "../../../models/product.model";
+import { AICompatibleQuizModel } from "../../../models/quiz.model";
 import HelperService from "../../helper.service";
 import { INGREDIENT_CONFLICTS } from "../data/IngredientConflicts";
 
@@ -308,5 +309,84 @@ export class ProductUtils {
             ...(p.function || []).map(f => f.name || "")
         ].join(" ").toLowerCase();
         return /(eye\s*cream|under\s*eye|eye\s*serum|dark\s*circle)/.test(names);
+    }
+
+    /**
+     * AI-DOC Rule R5: Check if product functions match user concerns
+     * Exfoliants: For acne-prone, active acne, hyperpigmentation, texture, wrinkles/fine lines, dullness, or shaving bumps
+     * Eye Cream: ONLY if "dark circles" concern present
+     * Hydrate: For dullness, dryness, redness, pores, wrinkles/fine lines
+     * Soothe: For redness, shaving bumps, active acne, shaving bumps
+     * Exfoliate: For acne-prone, active acne, wrinkles/fine lines, texture, pores, hyperpigmentation, shaving bumps
+     */
+    static functionMatchesUserConcerns(p: Product, aiQuiz: AICompatibleQuizModel): boolean {
+        const functions = (p.function || []).map(f => (f.name || "").toLowerCase());
+        if (functions.length === 0) return true; // No function specified, allow it
+
+        const allUserConcerns = [...aiQuiz.concerns.primary, ...aiQuiz.concerns.secondary].map(c => c.toLowerCase());
+        const hasDarkCircles = allUserConcerns.some(c => c.includes("dark circle"));
+        const currentAcneStatus = aiQuiz.skinAssessment.currentAcneStatus;
+
+        // Map "acne" concern to specific status
+        const hasActiveAcne = currentAcneStatus === "active acne" && allUserConcerns.some(c => c === "acne");
+        const hasAcneProne = currentAcneStatus === "not active acne" && allUserConcerns.some(c => c === "acne");
+
+        // Normalize concerns for matching
+        const normalizedConcerns = allUserConcerns.map(c => {
+            if (c === "acne") {
+                return currentAcneStatus === "active acne" ? "active acne" : "acne-prone";
+            }
+            if (c.includes("fine line") || c.includes("wrinkle")) return "wrinkles/fine lines";
+            if (c.includes("shaving bump")) return "shaving bumps";
+            return c;
+        });
+
+        // Check each function
+        for (const func of functions) {
+            const funcLower = func.toLowerCase();
+
+            // Eye Cream: ONLY if "dark circles" concern present
+            if (funcLower.includes("eye cream") || funcLower.includes("eye")) {
+                if (!hasDarkCircles) return false;
+                continue; // Eye cream is valid if dark circles present
+            }
+
+            // Exfoliants: For acne-prone, active acne, hyperpigmentation, texture, wrinkles/fine lines, dullness, or shaving bumps
+            if (funcLower.includes("exfoliant")) {
+                const validConcerns = ["acne-prone", "active acne", "hyperpigmentation", "texture", "wrinkles/fine lines", "dullness", "shaving bumps"];
+                const hasValidConcern = normalizedConcerns.some(c => validConcerns.includes(c));
+                if (!hasValidConcern) return false;
+                continue;
+            }
+
+            // Hydrate: For dullness, dryness, redness, pores, wrinkles/fine lines
+            if (funcLower.includes("hydrate")) {
+                const validConcerns = ["dullness", "dryness", "redness", "pores", "wrinkles/fine lines"];
+                const hasValidConcern = normalizedConcerns.some(c => validConcerns.includes(c));
+                if (!hasValidConcern) return false;
+                continue;
+            }
+
+            // Soothe: For redness, shaving bumps, active acne, shaving bumps
+            if (funcLower.includes("soothe")) {
+                const validConcerns = ["redness", "shaving bumps", "active acne"];
+                const hasValidConcern = normalizedConcerns.some(c => validConcerns.includes(c));
+                if (!hasValidConcern) return false;
+                continue;
+            }
+
+            // Exfoliate: For acne-prone, active acne, wrinkles/fine lines, texture, pores, hyperpigmentation, shaving bumps
+            if (funcLower.includes("exfoliate")) {
+                const validConcerns = ["acne-prone", "active acne", "wrinkles/fine lines", "texture", "pores", "hyperpigmentation", "shaving bumps"];
+                const hasValidConcern = normalizedConcerns.some(c => validConcerns.includes(c));
+                if (!hasValidConcern) return false;
+                continue;
+            }
+
+            // Other functions (Treat, Protect, etc.) - allow them (no specific restriction)
+            // Serums: For targeted concerns (already handled by concern matching)
+        }
+
+        return true; // All functions match user concerns
     }
 }

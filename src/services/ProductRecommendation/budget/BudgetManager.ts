@@ -34,7 +34,7 @@ export class BudgetManager {
         const strategies = {
             1: { name: "Low Budget - Essentials Only", targetProducts: [2, 3], targetUtilization: 20, maxTreatments: 0, allowEye: false },
             2: { name: "Mid Budget - Essentials + Treatment", targetProducts: [3, 4], targetUtilization: 20, maxTreatments: 1, allowEye: false },
-            3: { name: "High Budget - Premium Multi-Treatment", targetProducts: [3, 5], targetUtilization: 20, maxTreatments: 2, allowEye: false }
+            3: { name: "High Budget - Premium Multi-Treatment", targetProducts: [4, 6], targetUtilization: 20, maxTreatments: 2, allowEye: false }
         };
         return strategies[tier];
     }

@@ -77,7 +77,8 @@ export class ValidationUtils {
                     continue;
                 }
 
-                if (skinType === "oily" && !inRange(s, 1, 3)) return false;
+                // AI-DOC Rule T6: Oily Skin - Moisturize: 1/4-2/4
+                if (skinType === "oily" && !inRange(s, 1, 2)) return false;
                 if (skinType === "dry" && !inRange(s, 2, 4)) return false;
                 if (skinType === "combination" && !inRange(s, 1, 4)) return false;
             } else if (step.includes("treat") || step.includes("serum") || step.includes("active")) {
@@ -103,8 +104,31 @@ export class ValidationUtils {
         const hasRosacea = aiQuiz.safetyInformation.medicalConditions.includes("rosacea");
         const hasEczema = aiQuiz.safetyInformation.medicalConditions.includes("eczema");
         if (hasRosacea || hasEczema) {
-            const bad = ["alcohol", "fragrance", "retinol", "retinal", "retinoid", "aha", "bha", "glycolic", "salicylic", "benzoyl peroxide"];
+            // AI-DOC Rule S3/S4: Check for problematic actives (excluding generic alcohol)
+            const bad = ["fragrance", "retinol", "retinal", "retinoid", "aha", "bha", "glycolic", "salicylic", "benzoyl peroxide"];
             if (actives.some(a => bad.includes(a))) return true;
+
+            // AI-DOC Rule S3/S4: SPECIFICALLY AND ONLY filter these alcohols for Eczema/Rosacea
+            // Alcohol Denat, Ethanol, Isopropyl Alcohol, SD Alcohol 40
+            const primaryActivesText = (ProductUtils.getPrimaryActivesText(p) || "").toLowerCase();
+            const fullIngredientList = (p.ingredientList?.plain_text || "").toLowerCase();
+            const allIngredientText = primaryActivesText + " " + fullIngredientList;
+
+            // Specific alcohols to filter (using word boundary regex for accurate matching)
+            const specificAlcohols = [
+                "alcohol denat",
+                "ethanol",
+                "isopropyl alcohol",
+                "sd alcohol 40"
+            ];
+
+            for (const alcohol of specificAlcohols) {
+                // Use word boundary regex for accurate matching
+                const regex = new RegExp(`\\b${alcohol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                if (regex.test(allIngredientText)) {
+                    return true; // Found specific alcohol, reject product
+                }
+            }
         }
 
         const meds = aiQuiz.safetyInformation.currentMedications;
